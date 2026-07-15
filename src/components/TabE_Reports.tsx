@@ -407,54 +407,247 @@ export default function TabEReports({ schoolId, classId, subjectId, bimonthly, i
         </div>
 
         {/* 1. GRADES REPORT TABLE */}
-        {activeReport === 'grades' && (
-          <div className="space-y-3">
-            <h4 className="text-zinc-200 print:text-black font-bold text-xs uppercase tracking-wider">Boletim de Aproveitamento</h4>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse text-xs">
-                <thead>
-                  <tr className="bg-zinc-950/60 print:bg-zinc-200 border-b border-zinc-800 text-zinc-300 print:text-black font-bold uppercase text-[10px]">
-                    <th className="py-2.5 px-2 text-center w-10">Nº</th>
-                    <th className="py-2.5 px-3">Aluno</th>
-                    <th className="py-2.5 px-2 text-center w-16" title={t1Label}>T1</th>
-                    <th className="py-2.5 px-2 text-center w-16" title={t2Label}>T2</th>
-                    <th className="py-2.5 px-2 text-center w-16" title={t3Label}>T3</th>
-                    <th className="py-2.5 px-2 text-center w-16" title={t4Label}>T4</th>
-                    <th className="py-2.5 px-2 text-center w-16" title={t5Label}>T5</th>
-                    <th className="py-2.5 px-2 text-center w-16">Prova</th>
-                    <th className="py-2.5 px-3 text-center w-24 bg-blue-950/20 text-blue-400 font-bold border-l border-zinc-800">Média Final</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-zinc-800/60 text-zinc-300 print:text-black">
-                  {students.map((st) => {
-                    const row = getStudentGradesRow(st.id!);
-                    const isBelow = row.average !== '-' && parseFloat(row.average) < 7.0;
+        {activeReport === 'grades' && (() => {
+          // Calculate student statistics for the bimonthly grades
+          const classifiedStudents = students.map((st) => {
+            const row = getStudentGradesRow(st.id!);
+            const avg = row.average === '-' ? null : parseFloat(row.average);
+            return { student: st, avg };
+          });
 
-                    return (
-                      <tr key={st.id} className="hover:bg-white/5">
-                        <td className="py-2 px-2 text-center font-mono">{st.rollNumber}</td>
-                        <td className="py-2 px-3 font-semibold text-zinc-200 print:text-black">{st.name}</td>
-                        <td className={`py-2 px-2 text-center font-mono ${getReportGradeClass(row.t1)}`}>{row.t1}</td>
-                        <td className={`py-2 px-2 text-center font-mono ${getReportGradeClass(row.t2)}`}>{row.t2}</td>
-                        <td className={`py-2 px-2 text-center font-mono ${getReportGradeClass(row.t3)}`}>{row.t3}</td>
-                        <td className={`py-2 px-2 text-center font-mono ${getReportGradeClass(row.t4)}`}>{row.t4}</td>
-                        <td className={`py-2 px-2 text-center font-mono ${getReportGradeClass(row.t5)}`}>{row.t5}</td>
-                        <td className={`py-2 px-2 text-center font-mono ${getReportGradeClass(row.exam)}`}>{row.exam}</td>
-                        <td className={`py-2 px-3 text-center font-mono font-extrabold bg-blue-950/10 text-blue-400 print:text-black ${isBelow ? 'text-rose-400' : ''}`}>
-                          {row.average}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+          const stats = {
+            abaixo: 0,
+            basico: 0,
+            adequado: 0,
+            avancado: 0,
+            semNota: 0,
+          };
+
+          classifiedStudents.forEach((item) => {
+            if (item.avg === null) {
+              stats.semNota++;
+            } else if (item.avg < 5.0) {
+              stats.abaixo++;
+            } else if (item.avg >= 5.0 && item.avg < 7.0) {
+              stats.basico++;
+            } else if (item.avg >= 7.0 && item.avg < 9.0) {
+              stats.adequado++;
+            } else if (item.avg >= 9.0) {
+              stats.avancado++;
+            }
+          });
+
+          const totalClassified = stats.abaixo + stats.basico + stats.adequado + stats.avancado;
+
+          const r = 36;
+          const strokeWidth = 10;
+          const circumference = 2 * Math.PI * r; // ~226.195
+
+          const data = [
+            { key: 'abaixo', value: stats.abaixo, color: '#ef4444', label: 'Abaixo do Básico' },
+            { key: 'basico', value: stats.basico, color: '#f59e0b', label: 'Básico' },
+            { key: 'adequado', value: stats.adequado, color: '#3b82f6', label: 'Adequado' },
+            { key: 'avancado', value: stats.avancado, color: '#10b981', label: 'Avançado' },
+          ];
+
+          // Calculate percentage and dash offset
+          let currentOffset = 0;
+          const slices = data.map((d) => {
+            const percentage = totalClassified > 0 ? (d.value / totalClassified) : 0;
+            const strokeLength = percentage * circumference;
+            const strokeDasharray = `${strokeLength} ${circumference}`;
+            const strokeDashoffset = currentOffset;
+            currentOffset -= strokeLength;
+            return {
+              ...d,
+              percentage: Math.round(percentage * 100),
+              strokeDasharray,
+              strokeDashoffset,
+            };
+          });
+
+          return (
+            <div className="space-y-6">
+              <h4 className="text-zinc-200 print:text-black font-bold text-xs uppercase tracking-wider">Boletim de Aproveitamento</h4>
+
+              {/* Desempenho Geral da Turma - High Fidelity Card */}
+              <div id="class-performance-chart-card" className="bg-zinc-950/40 border border-zinc-800 rounded-2xl p-6 print:bg-transparent print:border-zinc-300 print:text-black space-y-4">
+                <div className="flex items-start gap-3">
+                  <div className="p-2 bg-blue-500/10 text-blue-400 rounded-xl shrink-0 print:hidden">
+                    <Award className="w-5 h-5 text-sky-400" />
+                  </div>
+                  <div>
+                    <h3 className="text-white print:text-black font-extrabold text-sm md:text-base tracking-tight flex items-center gap-1.5">
+                      Desempenho Geral da Turma
+                    </h3>
+                    <p className="text-zinc-400 print:text-zinc-600 text-[11px] md:text-xs mt-0.5">
+                      Classificação e distribuição dos alunos com base na média obtida neste bimestre.
+                    </p>
+                  </div>
+                </div>
+
+                {totalClassified === 0 ? (
+                  <div className="text-center py-8 text-zinc-500 text-xs font-medium">
+                    Nenhuma nota bimestral calculada ainda. Lance as notas na aba "Notas" para visualizar o gráfico de distribuição.
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-center">
+                    {/* Chart Column */}
+                    <div className="md:col-span-5 flex justify-center py-2">
+                      <div className="relative flex items-center justify-center w-40 h-40 md:w-44 md:h-44">
+                        <svg viewBox="0 0 100 100" className="w-full h-full drop-shadow-md">
+                          <circle
+                            cx="50"
+                            cy="50"
+                            r={r}
+                            fill="transparent"
+                            stroke="#27272a"
+                            strokeWidth={strokeWidth}
+                            className="print:stroke-zinc-200"
+                          />
+                          {slices.map((slice) => {
+                            if (slice.value === 0) return null;
+                            return (
+                              <circle
+                                key={slice.key}
+                                cx="50"
+                                cy="50"
+                                r={r}
+                                fill="transparent"
+                                stroke={slice.color}
+                                strokeWidth={strokeWidth}
+                                strokeDasharray={slice.strokeDasharray}
+                                strokeDashoffset={slice.strokeDashoffset}
+                                transform="rotate(-90 50 50)"
+                                strokeLinecap="butt"
+                                className="transition-all duration-500 ease-out"
+                              />
+                            );
+                          })}
+                          <text x="50" y="48" textAnchor="middle" className="fill-white print:fill-black font-extrabold text-[15px]">
+                            {totalClassified}
+                          </text>
+                          <text x="50" y="58" textAnchor="middle" className="fill-zinc-400 print:fill-zinc-600 font-bold text-[7px] uppercase tracking-wider">
+                            {totalClassified === 1 ? 'Aluno' : 'Alunos'}
+                          </text>
+                        </svg>
+                      </div>
+                    </div>
+
+                    {/* Categories Column */}
+                    <div className="md:col-span-7 space-y-2.5">
+                      {slices.map((slice) => {
+                        const pct = totalClassified > 0 ? Math.round((slice.value / totalClassified) * 100) : 0;
+                        
+                        let rowClass = "";
+                        let dotClass = "";
+                        let textPrimaryClass = "";
+                        let textSecondaryClass = "";
+                        let badgeClass = "";
+
+                        if (slice.key === 'abaixo') {
+                          rowClass = "bg-rose-500/5 border-rose-500/10 text-rose-400 print:bg-rose-50 print:border-rose-200 print:text-rose-700";
+                          dotClass = "bg-rose-500";
+                          textPrimaryClass = "text-rose-200 print:text-rose-900";
+                          textSecondaryClass = "text-rose-400/70 print:text-rose-600/80";
+                          badgeClass = "text-rose-400 print:text-rose-800 font-extrabold";
+                        } else if (slice.key === 'basico') {
+                          rowClass = "bg-amber-500/5 border-amber-500/10 text-amber-400 print:bg-amber-50 print:border-amber-200 print:text-amber-700";
+                          dotClass = "bg-amber-500";
+                          textPrimaryClass = "text-amber-200 print:text-amber-900";
+                          textSecondaryClass = "text-amber-400/70 print:text-amber-600/80";
+                          badgeClass = "text-amber-400 print:text-amber-800 font-extrabold";
+                        } else if (slice.key === 'adequado') {
+                          rowClass = "bg-blue-500/5 border-blue-500/10 text-blue-400 print:bg-blue-50 print:border-blue-200 print:text-blue-700";
+                          dotClass = "bg-blue-500";
+                          textPrimaryClass = "text-blue-200 print:text-blue-900";
+                          textSecondaryClass = "text-blue-400/70 print:text-blue-600/80";
+                          badgeClass = "text-blue-400 print:text-blue-800 font-extrabold";
+                        } else {
+                          rowClass = "bg-emerald-500/5 border-emerald-500/10 text-emerald-400 print:bg-emerald-50 print:border-emerald-200 print:text-emerald-700";
+                          dotClass = "bg-emerald-500";
+                          textPrimaryClass = "text-emerald-200 print:text-emerald-900";
+                          textSecondaryClass = "text-emerald-400/70 print:text-emerald-600/80";
+                          badgeClass = "text-emerald-400 print:text-emerald-800 font-extrabold";
+                        }
+
+                        return (
+                          <div
+                            key={slice.key}
+                            className={`flex items-center justify-between p-3 rounded-xl border transition duration-200 ${rowClass}`}
+                          >
+                            <div className="flex items-center gap-2.5">
+                              <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${dotClass}`} />
+                              <div>
+                                <p className={`font-bold text-xs tracking-tight ${textPrimaryClass}`}>{slice.label}</p>
+                                <p className={`text-[10px] font-medium ${textSecondaryClass}`}>
+                                  {slice.key === 'abaixo' && 'Média < 5.0'}
+                                  {slice.key === 'basico' && 'Média 5.0 a 6.9'}
+                                  {slice.key === 'adequado' && 'Média 7.0 a 8.9'}
+                                  {slice.key === 'avancado' && 'Média >= 9.0'}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              <span className={`font-bold text-xs ${badgeClass}`}>
+                                {slice.value} <span className="text-[10px] opacity-80">({pct}%)</span>
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Table Container */}
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="bg-zinc-950/60 print:bg-zinc-200 border-b border-zinc-800 text-zinc-300 print:text-black font-bold uppercase text-[10px]">
+                      <th className="py-2.5 px-2 text-center w-10">Nº</th>
+                      <th className="py-2.5 px-3">Aluno</th>
+                      <th className="py-2.5 px-2 text-center w-16" title={t1Label}>T1</th>
+                      <th className="py-2.5 px-2 text-center w-16" title={t2Label}>T2</th>
+                      <th className="py-2.5 px-2 text-center w-16" title={t3Label}>T3</th>
+                      <th className="py-2.5 px-2 text-center w-16" title={t4Label}>T4</th>
+                      <th className="py-2.5 px-2 text-center w-16" title={t5Label}>T5</th>
+                      <th className="py-2.5 px-2 text-center w-16">Prova</th>
+                      <th className="py-2.5 px-3 text-center w-24 bg-blue-950/20 text-blue-400 font-bold border-l border-zinc-800">Média Final</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-zinc-800/60 text-zinc-300 print:text-black">
+                    {students.map((st) => {
+                      const row = getStudentGradesRow(st.id!);
+                      const isBelow = row.average !== '-' && parseFloat(row.average) < 7.0;
+
+                      return (
+                        <tr key={st.id} className="hover:bg-white/5">
+                          <td className="py-2 px-2 text-center font-mono">{st.rollNumber}</td>
+                          <td className="py-2 px-3 font-semibold text-zinc-200 print:text-black">{st.name}</td>
+                          <td className={`py-2 px-2 text-center font-mono ${getReportGradeClass(row.t1)}`}>{row.t1}</td>
+                          <td className={`py-2 px-2 text-center font-mono ${getReportGradeClass(row.t2)}`}>{row.t2}</td>
+                          <td className={`py-2 px-2 text-center font-mono ${getReportGradeClass(row.t3)}`}>{row.t3}</td>
+                          <td className={`py-2 px-2 text-center font-mono ${getReportGradeClass(row.t4)}`}>{row.t4}</td>
+                          <td className={`py-2 px-2 text-center font-mono ${getReportGradeClass(row.t5)}`}>{row.t5}</td>
+                          <td className={`py-2 px-2 text-center font-mono ${getReportGradeClass(row.exam)}`}>{row.exam}</td>
+                          <td className={`py-2 px-3 text-center font-mono font-extrabold bg-blue-950/10 text-blue-400 print:text-black ${isBelow ? 'text-rose-400' : ''}`}>
+                            {row.average}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <div className="text-[10px] text-zinc-500 font-medium pt-3 leading-relaxed">
+                <p>* Descritores Bimestrais cadastrados: T1 = {t1Label}; T2 = {t2Label}; T3 = {t3Label}; T4 = {t4Label}; T5 = {t5Label}</p>
+                <p>* Nota de corte para aprovação do bimestre: 7.0 (A recuperação é realizada ao fim de cada semestre)</p>
+              </div>
             </div>
-            <div className="text-[10px] text-zinc-500 font-medium pt-3 leading-relaxed">
-              <p>* Descritores Bimestrais cadastrados: T1 = {t1Label}; T2 = {t2Label}; T3 = {t3Label}; T4 = {t4Label}; T5 = {t5Label}</p>
-              <p>* Nota de corte para aprovação do bimestre: 7.0 (A recuperação é realizada ao fim de cada semestre)</p>
-            </div>
-          </div>
-        )}
+          );
+        })()}
 
         {/* 2. ATTENDANCE REPORT TABLE */}
         {activeReport === 'attendance' && (
