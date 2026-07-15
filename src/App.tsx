@@ -8,7 +8,7 @@ import TabCGamification from './components/TabC_Gamification';
 import TabDAttendance from './components/TabD_Attendance';
 import TabEReports from './components/TabE_Reports';
 import TabFSettings from './components/TabF_Settings';
-import { FileText, CheckSquare, Trophy, Calendar, FileBarChart2, Settings, Sparkles, Lock, User, Eye, EyeOff, LogOut, Key, AlertTriangle, Plus, ShieldAlert, Shield, Search, UserPlus, Trash2, ArrowLeft, Check, LogIn, Users } from 'lucide-react';
+import { FileText, CheckSquare, Trophy, Calendar, FileBarChart2, Settings, Sparkles, Lock, User, Eye, EyeOff, LogOut, Key, AlertTriangle, Plus, ShieldAlert, Shield, Search, UserPlus, Trash2, ArrowLeft, Check, LogIn, Users, Pencil, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 type TabKey = 'attendance' | 'grades' | 'vistos' | 'gamification' | 'reports' | 'settings';
@@ -98,7 +98,8 @@ export default function App() {
   const [coordinators, setCoordinators] = useState<any[]>(() => {
     const defaultCoords = [
       { username: 'coordenador', password: '123', name: 'Coordenador Geral' },
-      { username: 'admin', password: 'admin', name: 'Administrador Geral' }
+      { username: 'admin', password: 'admin', name: 'Administrador Geral' },
+      { username: 'administrador', password: 'administrador', name: 'Administrador Geral' }
     ];
     try {
       const localCoords = localStorage.getItem('portal_coordinators_list');
@@ -106,6 +107,9 @@ export default function App() {
         const list = JSON.parse(localCoords);
         if (!list.some((c: any) => c.username.toLowerCase() === 'admin')) {
           list.push({ username: 'admin', password: 'admin', name: 'Administrador Geral' });
+        }
+        if (!list.some((c: any) => c.username.toLowerCase() === 'administrador')) {
+          list.push({ username: 'administrador', password: 'administrador', name: 'Administrador Geral' });
         }
         return list;
       }
@@ -126,6 +130,7 @@ export default function App() {
   const [newAccPass, setNewAccPass] = useState('');
   const [accSuccessMessage, setAccSuccessMessage] = useState('');
   const [accErrorMessage, setAccErrorMessage] = useState('');
+  const [editingAcc, setEditingAcc] = useState<any | null>(null);
 
   // TEACHER PROFILE & AUTHENTICATION STATES
   const [professors, setProfessors] = useState<ProfessorAccount[]>(() => getProfessorsList());
@@ -222,6 +227,14 @@ export default function App() {
       coordinatorsList.push({
         username: 'admin',
         password: 'admin',
+        name: 'Administrador Geral'
+      });
+    }
+
+    if (!coordinatorsList.some(c => c.username.toLowerCase() === 'administrador')) {
+      coordinatorsList.push({
+        username: 'administrador',
+        password: 'administrador',
         name: 'Administrador Geral'
       });
     }
@@ -406,7 +419,96 @@ export default function App() {
       return;
     }
 
-    // Check duplicate
+    const { deleteProfessorFromCloud, deleteCoordinatorFromCloud, saveProfessorToCloud, saveCoordinatorToCloud } = await import('./firebase');
+
+    if (editingAcc) {
+      const oldUsername = editingAcc.username.toLowerCase();
+      const newUsername = username.toLowerCase();
+
+      if (oldUsername !== newUsername) {
+        const duplicateProf = professors.some(p => p.username.toLowerCase() === newUsername);
+        const duplicateCoord = coordinators.some(c => c.username.toLowerCase() === newUsername);
+        if (duplicateProf || duplicateCoord) {
+          setAccErrorMessage('Este nome de usuário já está cadastrado no sistema.');
+          return;
+        }
+      }
+
+      if (editingAcc.role === 'teacher') {
+        try {
+          const updatedProf = {
+            ...editingAcc,
+            username: newUsername,
+            password: password,
+            teacherName: name,
+            dbName: editingAcc.dbName || `TeacherDatabase_${newUsername}`
+          };
+          
+          await saveProfessorToCloud(updatedProf);
+          
+          if (oldUsername !== newUsername) {
+            await deleteProfessorFromCloud(oldUsername);
+          }
+          
+          const updatedList = professors.map(p => p.username.toLowerCase() === oldUsername ? updatedProf : p);
+          localStorage.setItem('portal_professors_list', JSON.stringify(updatedList));
+          setProfessors(updatedList);
+          
+          if (localStorage.getItem('portal_active_user')?.toLowerCase() === oldUsername) {
+            localStorage.setItem('portal_active_user', newUsername);
+            localStorage.setItem('portal_username', newUsername);
+            localStorage.setItem('portal_password', password);
+            localStorage.setItem('portal_teacher_name', name);
+          }
+          
+          setAccSuccessMessage('Conta de professor atualizada com sucesso!');
+          setEditingAcc(null);
+          setNewAccName('');
+          setNewAccUser('');
+          setNewAccPass('');
+        } catch (err) {
+          console.error(err);
+          setAccErrorMessage('Erro ao atualizar professor na nuvem.');
+        }
+      } else {
+        try {
+          const updatedCoord = {
+            username: newUsername,
+            password: password,
+            name: name
+          };
+          
+          await saveCoordinatorToCloud(updatedCoord);
+          
+          if (oldUsername !== newUsername) {
+            await deleteCoordinatorFromCloud(oldUsername);
+          }
+          
+          const updatedList = coordinators.map(c => c.username.toLowerCase() === oldUsername ? updatedCoord : c);
+          localStorage.setItem('portal_coordinators_list', JSON.stringify(updatedList));
+          setCoordinators(updatedList);
+          
+          if (localStorage.getItem('portal_active_user')?.toLowerCase() === oldUsername) {
+            localStorage.setItem('portal_active_user', newUsername);
+            localStorage.setItem('portal_username', newUsername);
+            localStorage.setItem('portal_password', password);
+            localStorage.setItem('portal_teacher_name', name);
+          }
+          
+          setAccSuccessMessage('Conta de coordenador atualizada com sucesso!');
+          setEditingAcc(null);
+          setNewAccName('');
+          setNewAccUser('');
+          setNewAccPass('');
+        } catch (err) {
+          console.error(err);
+          setAccErrorMessage('Erro ao atualizar coordenador na nuvem.');
+        }
+      }
+      return;
+    }
+
+    // Check duplicate (creation mode)
     const localProfessors = professors;
     const duplicateProf = localProfessors.some(p => p.username.toLowerCase() === username);
     const duplicateCoord = coordinators.some(c => c.username.toLowerCase() === username);
@@ -415,8 +517,6 @@ export default function App() {
       setAccErrorMessage('Este nome de usuário já está cadastrado no sistema.');
       return;
     }
-
-    const { saveProfessorToCloud, saveCoordinatorToCloud } = await import('./firebase');
 
     if (newAccRole === 'teacher') {
       try {
@@ -1224,6 +1324,22 @@ export default function App() {
                 >
                   <LogIn className="w-4 h-4" /> Acessar Painel
                 </button>
+
+                <div className="text-center pt-2 border-t border-zinc-800/50 mt-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsRegistering(true);
+                      setRegName('');
+                      setRegUser('');
+                      setRegPass('');
+                      setLoginError('');
+                    }}
+                    className="text-xs text-blue-400 hover:text-blue-300 hover:underline transition font-bold cursor-pointer"
+                  >
+                    Não tem conta? Cadastrar Novo Professor
+                  </button>
+                </div>
               </form>
             </div>
           ) : (
@@ -1286,6 +1402,22 @@ export default function App() {
               {/* Minimal offline note */}
               <div className="text-[10px] text-zinc-500 pt-3 border-t border-zinc-850 leading-relaxed">
                 Cada professor possui um banco de dados totalmente isolado e sincronizado com segurança na nuvem.
+              </div>
+
+              <div className="pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsRegistering(true);
+                    setRegName('');
+                    setRegUser('');
+                    setRegPass('');
+                    setLoginError('');
+                  }}
+                  className="text-xs text-blue-400 hover:text-blue-300 hover:underline transition font-bold cursor-pointer"
+                >
+                  Não tem conta? Cadastrar Novo Professor
+                </button>
               </div>
             </div>
           )}
@@ -1449,10 +1581,21 @@ export default function App() {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               {/* Card 1: Account Creation Form */}
               <div className="bg-zinc-900 border border-zinc-800 p-6 rounded-2xl space-y-4">
-                <h3 className="text-white font-bold text-sm flex items-center gap-2">
-                  <UserPlus className="w-4 h-4 text-amber-500" /> Cadastrar Nova Conta
-                </h3>
-                <p className="text-xs text-zinc-500">Crie contas para professores acessarem o portal ou para outros coordenadores gerais.</p>
+                {editingAcc ? (
+                  <h3 className="text-white font-bold text-sm flex items-center gap-2">
+                    <Pencil className="w-4 h-4 text-amber-500 animate-pulse" /> Editar Conta: @{editingAcc.username}
+                  </h3>
+                ) : (
+                  <h3 className="text-white font-bold text-sm flex items-center gap-2">
+                    <UserPlus className="w-4 h-4 text-amber-500" /> Cadastrar Nova Conta
+                  </h3>
+                )}
+                <p className="text-xs text-zinc-500">
+                  {editingAcc 
+                    ? "Altere o nome completo, o usuário de acesso (login) e a senha de acesso para esta conta."
+                    : "Crie contas para professores acessarem o portal ou para outros coordenadores gerais."
+                  }
+                </p>
 
                 <form onSubmit={handleCreateAccountSubmit} className="space-y-4">
                   {/* Role selection */}
@@ -1461,8 +1604,9 @@ export default function App() {
                     <div className="grid grid-cols-2 gap-2">
                       <button
                         type="button"
+                        disabled={!!editingAcc}
                         onClick={() => setNewAccRole('teacher')}
-                        className={`py-2 rounded-xl text-xs font-bold transition border cursor-pointer ${
+                        className={`py-2 rounded-xl text-xs font-bold transition border cursor-pointer disabled:opacity-50 ${
                           newAccRole === 'teacher' ? 'bg-amber-600/10 border-amber-500 text-amber-400 animate-in fade-in' : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:text-white'
                         }`}
                       >
@@ -1470,8 +1614,9 @@ export default function App() {
                       </button>
                       <button
                         type="button"
+                        disabled={!!editingAcc}
                         onClick={() => setNewAccRole('coordinator')}
-                        className={`py-2 rounded-xl text-xs font-bold transition border cursor-pointer ${
+                        className={`py-2 rounded-xl text-xs font-bold transition border cursor-pointer disabled:opacity-50 ${
                           newAccRole === 'coordinator' ? 'bg-amber-600/10 border-amber-500 text-amber-400 animate-in fade-in' : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:text-white'
                         }`}
                       >
@@ -1532,12 +1677,37 @@ export default function App() {
                     </div>
                   )}
 
-                  <button
-                    type="submit"
-                    className="w-full py-2.5 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1 cursor-pointer shadow-lg shadow-amber-500/15"
-                  >
-                    <Plus className="w-4 h-4" /> Criar Conta
-                  </button>
+                  {editingAcc ? (
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingAcc(null);
+                          setNewAccName('');
+                          setNewAccUser('');
+                          setNewAccPass('');
+                          setAccSuccessMessage('');
+                          setAccErrorMessage('');
+                        }}
+                        className="py-2.5 bg-zinc-800 hover:bg-zinc-750 text-zinc-300 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1 cursor-pointer"
+                      >
+                        <X className="w-4.5 h-4.5" /> Cancelar
+                      </button>
+                      <button
+                        type="submit"
+                        className="py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1 cursor-pointer shadow-lg shadow-emerald-500/15"
+                      >
+                        <Check className="w-4.5 h-4.5" /> Salvar
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="submit"
+                      className="w-full py-2.5 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1 cursor-pointer shadow-lg shadow-amber-500/15"
+                    >
+                      <Plus className="w-4 h-4" /> Criar Conta
+                    </button>
+                  )}
                 </form>
               </div>
 
@@ -1569,15 +1739,33 @@ export default function App() {
                           </td>
                           <td className="py-3 text-zinc-500 font-mono">{c.password}</td>
                           <td className="py-3 text-right">
-                            <button
-                              type="button"
-                              disabled={localStorage.getItem('portal_active_user') === c.username}
-                              onClick={() => handleDeleteAccount(c.username, 'coordinator')}
-                              className="text-zinc-500 hover:text-rose-400 disabled:opacity-30 disabled:hover:text-zinc-500 p-1 transition cursor-pointer"
-                              title="Excluir Coordenador"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
+                            <div className="flex items-center justify-end gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingAcc({ ...c, role: 'coordinator' });
+                                  setNewAccRole('coordinator');
+                                  setNewAccName(c.name);
+                                  setNewAccUser(c.username);
+                                  setNewAccPass(c.password);
+                                  setAccSuccessMessage('');
+                                  setAccErrorMessage('');
+                                }}
+                                className="text-zinc-500 hover:text-amber-400 p-1 transition cursor-pointer"
+                                title="Editar Coordenador"
+                              >
+                                <Pencil className="w-4 h-4" />
+                              </button>
+                              <button
+                                type="button"
+                                disabled={localStorage.getItem('portal_active_user') === c.username}
+                                onClick={() => handleDeleteAccount(c.username, 'coordinator')}
+                                className="text-zinc-500 hover:text-rose-400 disabled:opacity-30 disabled:hover:text-zinc-500 p-1 transition cursor-pointer"
+                                title="Excluir Coordenador"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -1592,14 +1780,32 @@ export default function App() {
                           </td>
                           <td className="py-3 text-zinc-500 font-mono">{p.password}</td>
                           <td className="py-3 text-right">
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteAccount(p.username, 'teacher')}
-                              className="text-zinc-500 hover:text-rose-400 p-1 transition cursor-pointer"
-                              title="Excluir Professor"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
+                            <div className="flex items-center justify-end gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingAcc({ ...p, role: 'teacher' });
+                                  setNewAccRole('teacher');
+                                  setNewAccName(p.teacherName);
+                                  setNewAccUser(p.username);
+                                  setNewAccPass(p.password);
+                                  setAccSuccessMessage('');
+                                  setAccErrorMessage('');
+                                }}
+                                className="text-zinc-500 hover:text-amber-400 p-1 transition cursor-pointer"
+                                title="Editar Professor"
+                              >
+                                <Pencil className="w-4 h-4" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteAccount(p.username, 'teacher')}
+                                className="text-zinc-500 hover:text-rose-400 p-1 transition cursor-pointer"
+                                title="Excluir Professor"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       ))}

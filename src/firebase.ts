@@ -227,11 +227,8 @@ export async function syncCoordinatorsListInCloud(): Promise<CoordinatorAccount[
       cloudList.push(doc.data() as CoordinatorAccount);
     });
 
-    // Ensure both default coordinator AND master admin are present in the cloud list
-    const hasCoordenador = cloudList.some(c => c.username.toLowerCase() === 'coordenador');
-    const hasAdmin = cloudList.some(c => c.username.toLowerCase() === 'admin');
-
-    if (!hasCoordenador) {
+    // Seed default coordinator and administrators only if the cloud list is completely empty
+    if (cloudList.length === 0) {
       const defaultCoord: CoordinatorAccount = {
         username: 'coordenador',
         password: '123',
@@ -239,9 +236,7 @@ export async function syncCoordinatorsListInCloud(): Promise<CoordinatorAccount[
       };
       await saveCoordinatorToCloud(defaultCoord);
       cloudList.push(defaultCoord);
-    }
 
-    if (!hasAdmin) {
       const adminCoord: CoordinatorAccount = {
         username: 'admin',
         password: 'admin',
@@ -249,6 +244,14 @@ export async function syncCoordinatorsListInCloud(): Promise<CoordinatorAccount[
       };
       await saveCoordinatorToCloud(adminCoord);
       cloudList.push(adminCoord);
+
+      const administradorCoord: CoordinatorAccount = {
+        username: 'administrador',
+        password: 'administrador',
+        name: 'Administrador Geral'
+      };
+      await saveCoordinatorToCloud(administradorCoord);
+      cloudList.push(administradorCoord);
     }
 
     localStorage.setItem('portal_coordinators_list', JSON.stringify(cloudList));
@@ -262,7 +265,8 @@ export async function syncCoordinatorsListInCloud(): Promise<CoordinatorAccount[
     // Final fallback
     return [
       { username: 'coordenador', password: '123', name: 'Coordenador Geral' },
-      { username: 'admin', password: 'admin', name: 'Administrador Geral' }
+      { username: 'admin', password: 'admin', name: 'Administrador Geral' },
+      { username: 'administrador', password: 'administrador', name: 'Administrador Geral' }
     ];
   }
 }
