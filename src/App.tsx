@@ -764,7 +764,7 @@ export default function App() {
       if (activeUser && isAuthenticated && (role === 'teacher' || inspecting)) {
         try {
           const schoolCount = await db.schools.count();
-          const shouldPull = schoolCount === 0 || (inspecting && needsInspectPull);
+          const shouldPull = inspecting ? needsInspectPull : (schoolCount === 0);
 
           if (shouldPull) {
             setIsInitialSyncing(true);
