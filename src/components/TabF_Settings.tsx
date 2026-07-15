@@ -34,6 +34,7 @@ export default function TabFSettings({ teacherName, setTeacherName, onSecuritySa
   // STUDENT MANAGEMENT STATES
   const [selectedSchoolIdForStudent, setSelectedSchoolIdForStudent] = useState<number | undefined>(undefined);
   const [selectedClassIdForStudent, setSelectedClassIdForStudent] = useState<number | undefined>(undefined);
+  const [selectedClassIdForExport, setSelectedClassIdForExport] = useState<number | undefined>(undefined);
   const [newStudentName, setNewStudentName] = useState('');
   const [newStudentRoll, setNewStudentRoll] = useState<number | undefined>(undefined);
   const [bulkStudentText, setBulkStudentText] = useState('');
@@ -593,6 +594,415 @@ export default function TabFSettings({ teacherName, setTeacherName, onSecuritySa
         message: 'Erro ao exportar backup local.'
       });
     }
+  };
+
+  // EXPORTAR DADOS POR TURMA (Trabalhos por Turma)
+  const handleExportClassBackup = async (classId: number) => {
+    try {
+      const classObj = await db.classes.get(classId);
+      if (!classObj) {
+        setAlertDialog({
+          isOpen: true,
+          title: 'Erro',
+          message: 'Turma não encontrada para exportação.'
+        });
+        return;
+      }
+
+      const schoolObj = classObj.schoolId ? await db.schools.get(classObj.schoolId) : null;
+      const students = await db.students.where({ classId }).toArray();
+      const studentIds = students.map(s => s.id).filter((id): id is number => id !== undefined);
+
+      const workloads = await db.subjectWorkloads.where({ classId }).toArray();
+      const weeklySchedule = await db.weeklySchedule.where({ classId }).toArray();
+      
+      // bimonthlyGrades para estes alunos
+      const bimonthlyGrades = studentIds.length > 0 
+        ? await db.bimonthlyGrades.where('studentId').anyOf(studentIds).toArray()
+        : [];
+      
+      const assignmentDescriptions = await db.assignmentDescriptions.where({ classId }).toArray();
+      const lessons = await db.lessons.where({ classId }).toArray();
+      
+      // attendance para estes alunos
+      const attendance = studentIds.length > 0
+        ? await db.attendance.where('studentId').anyOf(studentIds).toArray()
+        : [];
+      
+      const vistoColumns = await db.vistoColumns.where({ classId }).toArray();
+      const vistoColumnIds = vistoColumns.map(vc => vc.id).filter((id): id is number => id !== undefined);
+      
+      const studentVistos = studentIds.length > 0
+        ? await db.studentVistos.where('studentId').anyOf(studentIds).toArray()
+        : [];
+      
+      const vistoRankingScores = studentIds.length > 0
+        ? await db.vistoRankingScores.where('studentId').anyOf(studentIds).toArray()
+        : [];
+      
+      const extraGrades = studentIds.length > 0
+        ? await db.extraGrades.where('studentId').anyOf(studentIds).toArray()
+        : [];
+
+      const subjects = await db.subjects.toArray();
+
+      const data = {
+        type: 'class_backup',
+        version: 1,
+        class: classObj,
+        school: schoolObj,
+        subjects,
+        students,
+        subjectWorkloads: workloads,
+        weeklySchedule,
+        bimonthlyGrades,
+        assignmentDescriptions,
+        lessons,
+        attendance,
+        vistoColumns,
+        studentVistos,
+        vistoRankingScores,
+        extraGrades
+      };
+
+      const jsonStr = JSON.stringify(data, null, 2);
+      const blob = new Blob([jsonStr], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      
+      const sanitizedClassName = classObj.name.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+      link.download = `backup_turma_${sanitizedClassName}_${new Date().toISOString().split('T')[0]}.json`;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Class backup export failed:', err);
+      setAlertDialog({
+        isOpen: true,
+        title: 'Erro',
+        message: 'Erro ao exportar os diários e trabalhos da turma.'
+      });
+    }
+  };
+
+  // RESTAURAR/IMPORTAR DADOS POR TURMA
+  const handleImportClassBackup = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      try {
+        const text = event.target?.result as string;
+        const data = JSON.parse(text);
+
+        if (!data || data.type !== 'class_backup' || !data.class) {
+          setAlertDialog({
+            isOpen: true,
+            title: 'Erro',
+            message: 'O arquivo enviado não é um backup de turma válido ou está corrompido.'
+          });
+          return;
+        }
+
+        const className = data.class.name;
+        const schoolName = data.school?.name || 'Escola Importada';
+
+        setConfirmDialog({
+          isOpen: true,
+          title: 'Confirmar Restauração de Turma',
+          message: `AVISO: Importar os dados da turma "${className}" irá excluir e substituir qualquer dado existente de mesmo nome nesta escola ("${schoolName}"). Outras turmas NÃO serão afetadas. Deseja continuar?`,
+          confirmText: 'Importar Turma',
+          cancelText: 'Cancelar',
+          onConfirm: async () => {
+            setConfirmDialog(null);
+            setCloudSyncDisabled(true);
+
+            try {
+              // 1. Resolver Escola
+              let targetSchool = await db.schools.where({ name: schoolName }).first();
+              let targetSchoolId: number;
+              if (targetSchool && targetSchool.id) {
+                targetSchoolId = targetSchool.id;
+              } else {
+                targetSchoolId = await db.schools.add({ name: schoolName });
+              }
+
+              // 2. Mapear disciplinas (subjects)
+              const subjectIdMap = new Map<number, number>();
+              if (data.subjects && Array.isArray(data.subjects)) {
+                for (const sub of data.subjects) {
+                  if (!sub.name) continue;
+                  const existingSub = await db.subjects.where({ name: sub.name }).first();
+                  if (existingSub && existingSub.id) {
+                    subjectIdMap.set(Number(sub.id), existingSub.id);
+                  } else {
+                    const newId = await db.subjects.add({ name: sub.name });
+                    subjectIdMap.set(Number(sub.id), newId);
+                  }
+                }
+              }
+              const mapSubjectId = (oldId: any) => subjectIdMap.get(Number(oldId)) || Number(oldId);
+
+              // 3. Excluir dados da turma de mesmo nome se já existir nesta escola
+              const existingClass = await db.classes.where({ name: className, schoolId: targetSchoolId }).first();
+              if (existingClass && existingClass.id) {
+                const classIdToClear = existingClass.id;
+                const oldStudents = await db.students.where({ classId: classIdToClear }).toArray();
+                const oldStudentIds = oldStudents.map(s => s.id).filter((id): id is number => id !== undefined);
+
+                await db.transaction('rw', [
+                  db.students, db.subjectWorkloads, db.weeklySchedule, db.bimonthlyGrades,
+                  db.assignmentDescriptions, db.lessons, db.attendance, db.vistoColumns,
+                  db.studentVistos, db.vistoRankingScores, db.extraGrades, db.classes
+                ], async () => {
+                  if (oldStudentIds.length > 0) {
+                    await db.students.where('classId').equals(classIdToClear).delete();
+                    await db.bimonthlyGrades.where('studentId').anyOf(oldStudentIds).delete();
+                    await db.attendance.where('studentId').anyOf(oldStudentIds).delete();
+                    await db.studentVistos.where('studentId').anyOf(oldStudentIds).delete();
+                    await db.vistoRankingScores.where('studentId').anyOf(oldStudentIds).delete();
+                    await db.extraGrades.where('studentId').anyOf(oldStudentIds).delete();
+                  }
+                  await db.subjectWorkloads.where('classId').equals(classIdToClear).delete();
+                  await db.weeklySchedule.where('classId').equals(classIdToClear).delete();
+                  await db.assignmentDescriptions.where('classId').equals(classIdToClear).delete();
+                  await db.lessons.where('classId').equals(classIdToClear).delete();
+                  
+                  const vCols = await db.vistoColumns.where('classId').equals(classIdToClear).toArray();
+                  const vColIds = vCols.map(vc => vc.id).filter((id): id is number => id !== undefined);
+                  if (vColIds.length > 0) {
+                    await db.studentVistos.where('vistoColumnId').anyOf(vColIds).delete();
+                  }
+                  await db.vistoColumns.where('classId').equals(classIdToClear).delete();
+                  await db.classes.delete(classIdToClear);
+                });
+              }
+
+              // 4. Inserir nova turma
+              const newClassId = await db.classes.add({ name: className, schoolId: targetSchoolId });
+
+              // 5. Inserir alunos e mapear IDs antigos para os novos
+              const studentIdMap = new Map<number, number>();
+              if (data.students && Array.isArray(data.students)) {
+                for (const stud of data.students) {
+                  const newId = await db.students.add({
+                    name: stud.name,
+                    rollNumber: Number(stud.rollNumber),
+                    classId: newClassId
+                  });
+                  if (stud.id) {
+                    studentIdMap.set(Number(stud.id), newId);
+                  }
+                }
+              }
+              const mapStudentId = (oldId: any) => studentIdMap.get(Number(oldId));
+
+              // 6. Inserir colunas de vistos e mapear seus IDs
+              const vistoColIdMap = new Map<number, number>();
+              if (data.vistoColumns && Array.isArray(data.vistoColumns)) {
+                for (const vc of data.vistoColumns) {
+                  const newId = await db.vistoColumns.add({
+                    classId: newClassId,
+                    subjectId: mapSubjectId(vc.subjectId),
+                    bimonthly: Number(vc.bimonthly || 1),
+                    date: vc.date,
+                    title: vc.title || 'Visto'
+                  });
+                  if (vc.id) {
+                    vistoColIdMap.set(Number(vc.id), newId);
+                  }
+                }
+              }
+              const mapVistoColId = (oldId: any) => vistoColIdMap.get(Number(oldId));
+
+              // 7. Inserir cargas horárias (subjectWorkloads)
+              if (data.subjectWorkloads && Array.isArray(data.subjectWorkloads)) {
+                const workloadsToInsert = data.subjectWorkloads.map((sw: any) => ({
+                  classId: newClassId,
+                  subjectId: mapSubjectId(sw.subjectId),
+                  totalLessons: Number(sw.totalLessons || 40)
+                }));
+                if (workloadsToInsert.length > 0) await db.subjectWorkloads.bulkAdd(workloadsToInsert);
+              }
+
+              // 8. Inserir quadro de horários (weeklySchedule)
+              if (data.weeklySchedule && Array.isArray(data.weeklySchedule)) {
+                const schedulesToInsert = data.weeklySchedule.map((ws: any) => ({
+                  dayOfWeek: Number(ws.dayOfWeek),
+                  timeSlot: ws.timeSlot,
+                  schoolId: targetSchoolId,
+                  classId: newClassId,
+                  subjectId: mapSubjectId(ws.subjectId)
+                }));
+                if (schedulesToInsert.length > 0) await db.weeklySchedule.bulkAdd(schedulesToInsert);
+              }
+
+              // 9. Inserir notas bimestrais (bimonthlyGrades)
+              if (data.bimonthlyGrades && Array.isArray(data.bimonthlyGrades)) {
+                const gradesToInsert = data.bimonthlyGrades
+                  .map((bg: any) => {
+                    const newStudId = mapStudentId(bg.studentId);
+                    if (!newStudId) return null;
+                    return {
+                      studentId: newStudId,
+                      bimonthly: Number(bg.bimonthly || bg.bimonth || 1),
+                      subjectId: mapSubjectId(bg.subjectId),
+                      t1: bg.t1 !== undefined && bg.t1 !== null ? Number(bg.t1) : undefined,
+                      t2: bg.t2 !== undefined && bg.t2 !== null ? Number(bg.t2) : undefined,
+                      t3: bg.t3 !== undefined && bg.t3 !== null ? Number(bg.t3) : undefined,
+                      t4: bg.t4 !== undefined && bg.t4 !== null ? Number(bg.t4) : undefined,
+                      t5: bg.t5 !== undefined && bg.t5 !== null ? Number(bg.t5) : undefined,
+                      exam: bg.exam !== undefined && bg.exam !== null ? Number(bg.exam) : undefined,
+                      recovery: bg.recovery !== undefined && bg.recovery !== null ? Number(bg.recovery) : undefined
+                    };
+                  })
+                  .filter(Boolean) as any[];
+                if (gradesToInsert.length > 0) await db.bimonthlyGrades.bulkAdd(gradesToInsert);
+              }
+
+              // 10. Inserir descrições de trabalhos (assignmentDescriptions)
+              if (data.assignmentDescriptions && Array.isArray(data.assignmentDescriptions)) {
+                const descsToInsert = data.assignmentDescriptions.map((ad: any) => ({
+                  classId: newClassId,
+                  subjectId: mapSubjectId(ad.subjectId),
+                  bimonthly: Number(ad.bimonthly || ad.bimonth || 1),
+                  t1: ad.t1,
+                  t2: ad.t2,
+                  t3: ad.t3,
+                  t4: ad.t4,
+                  t5: ad.t5
+                }));
+                if (descsToInsert.length > 0) await db.assignmentDescriptions.bulkAdd(descsToInsert);
+              }
+
+              // 11. Inserir diários de aulas (lessons)
+              if (data.lessons && Array.isArray(data.lessons)) {
+                const lessonsToInsert = data.lessons.map((ls: any) => ({
+                  classId: newClassId,
+                  subjectId: mapSubjectId(ls.subjectId),
+                  date: ls.date,
+                  bimonthly: Number(ls.bimonthly || 1),
+                  lessonCount: Number(ls.lessonCount || 1),
+                  content: ls.content || ''
+                }));
+                if (lessonsToInsert.length > 0) await db.lessons.bulkAdd(lessonsToInsert);
+              }
+
+              // 12. Inserir frequências/presenças (attendance)
+              if (data.attendance && Array.isArray(data.attendance)) {
+                const attToInsert = data.attendance
+                  .map((at: any) => {
+                    const newStudId = mapStudentId(at.studentId);
+                    if (!newStudId) return null;
+                    return {
+                      studentId: newStudId,
+                      date: at.date,
+                      subjectId: mapSubjectId(at.subjectId),
+                      bimonthly: Number(at.bimonthly || 1),
+                      absences: Number(at.absences || 0)
+                    };
+                  })
+                  .filter(Boolean) as any[];
+                if (attToInsert.length > 0) await db.attendance.bulkAdd(attToInsert);
+              }
+
+              // 13. Inserir vistos individuais (studentVistos)
+              if (data.studentVistos && Array.isArray(data.studentVistos)) {
+                const vistosToInsert = data.studentVistos
+                  .map((sv: any) => {
+                    const newStudId = mapStudentId(sv.studentId);
+                    const newVColId = mapVistoColId(sv.vistoColumnId);
+                    if (!newStudId || !newVColId) return null;
+                    return {
+                      studentId: newStudId,
+                      vistoColumnId: newVColId,
+                      checked: Boolean(sv.checked)
+                    };
+                  })
+                  .filter(Boolean) as any[];
+                if (vistosToInsert.length > 0) await db.studentVistos.bulkAdd(vistosToInsert);
+              }
+
+              // 14. Inserir pontuações do ranking (vistoRankingScores)
+              if (data.vistoRankingScores && Array.isArray(data.vistoRankingScores)) {
+                const scoresToInsert = data.vistoRankingScores
+                  .map((vrs: any) => {
+                    const newStudId = mapStudentId(vrs.studentId);
+                    if (!newStudId) return null;
+                    return {
+                      studentId: newStudId,
+                      subjectId: mapSubjectId(vrs.subjectId),
+                      bimonthly: Number(vrs.bimonthly || 1),
+                      type: vrs.type || 'visto',
+                      points: Number(vrs.points || 0),
+                      reason: vrs.reason || '',
+                      timestamp: Number(vrs.timestamp || Date.now())
+                    };
+                  })
+                  .filter(Boolean) as any[];
+                if (scoresToInsert.length > 0) await db.vistoRankingScores.bulkAdd(scoresToInsert);
+              }
+
+              // 15. Inserir notas extras / recuperações semestrais (extraGrades)
+              if (data.extraGrades && Array.isArray(data.extraGrades)) {
+                const extraToInsert = data.extraGrades
+                  .map((eg: any) => {
+                    const newStudId = mapStudentId(eg.studentId);
+                    if (!newStudId) return null;
+                    return {
+                      studentId: newStudId,
+                      subjectId: mapSubjectId(eg.subjectId),
+                      recSem1: eg.recSem1 !== undefined && eg.recSem1 !== null ? Number(eg.recSem1) : undefined,
+                      recSem2: eg.recSem2 !== undefined && eg.recSem2 !== null ? Number(eg.recSem2) : undefined,
+                      finalExam: eg.finalExam !== undefined && eg.finalExam !== null ? Number(eg.finalExam) : undefined
+                    };
+                  })
+                  .filter(Boolean) as any[];
+                if (extraToInsert.length > 0) await db.extraGrades.bulkAdd(extraToInsert);
+              }
+
+              // Sincronizar as alterações locais com a nuvem (Firestore)
+              const activeUser = localStorage.getItem('portal_active_user');
+              if (activeUser) {
+                try {
+                  await pushTeacherDataToCloud(activeUser, db);
+                } catch (cloudErr) {
+                  console.error('Failed to auto-sync imported class data to Cloud Firestore:', cloudErr);
+                }
+              }
+
+              setAlertDialog({
+                isOpen: true,
+                title: 'Sucesso',
+                message: `Turma "${className}" importada, normalizada e sincronizada com sucesso tanto localmente quanto na nuvem!`,
+                onClose: () => {
+                  window.location.reload();
+                }
+              });
+            } catch (err) {
+              console.error('Class Import error:', err);
+              setAlertDialog({
+                isOpen: true,
+                title: 'Erro',
+                message: 'Erro ao processar e salvar a turma selecionada.'
+              });
+            } finally {
+              setCloudSyncDisabled(false);
+            }
+          }
+        });
+      } catch (err) {
+        console.error('Class Import parse error:', err);
+        setAlertDialog({
+          isOpen: true,
+          title: 'Erro',
+          message: 'Erro ao analisar o arquivo de backup de turma. Verifique se é um JSON válido.'
+        });
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
   };
 
   // BACKUP IMPORT
@@ -1986,6 +2396,76 @@ export default function TabFSettings({ teacherName, setTeacherName, onSecuritySa
                 </label>
               </div>
 
+            </div>
+          </div>
+
+          {/* EXPORTAR E RESTAURAR POR TURMA */}
+          <div className="bg-zinc-900 border border-zinc-800 p-6 rounded-2xl space-y-4">
+            <h3 className="text-white font-bold text-sm flex items-center gap-2">
+              <Users className="w-5 h-5 text-purple-400" /> Exportação e Restauração de Diários por Turma
+            </h3>
+            <p className="text-xs text-zinc-400 leading-relaxed">
+              Deseja exportar ou restaurar apenas uma turma específica? Esta ferramenta permite isolar todo o trabalho (alunos, notas, presenças, diários de aula e vistos) de uma única turma em um arquivo JSON. Excelente para compartilhar com outros professores ou restaurar turmas seletivamente sem afetar as demais.
+            </p>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4 border-t border-zinc-800/80">
+              {/* SELETOR E EXPORTADOR */}
+              <div className="p-4 bg-zinc-950/40 rounded-xl border border-zinc-800 space-y-3">
+                <div className="flex items-center gap-2 text-purple-400">
+                  <Download className="w-4 h-4" />
+                  <h4 className="text-xs font-bold uppercase tracking-wider">Exportar Turma Selecionada</h4>
+                </div>
+                <p className="text-[11px] text-zinc-500">Selecione uma turma para gerar o arquivo de diário e notas específico dela.</p>
+                
+                <div className="space-y-2">
+                  <select
+                    value={selectedClassIdForExport || ''}
+                    onChange={(e) => setSelectedClassIdForExport(e.target.value ? Number(e.target.value) : undefined)}
+                    className="w-full bg-zinc-900 border border-zinc-850 text-zinc-200 text-xs rounded-xl px-3 py-2.5 focus:outline-none focus:ring-1 focus:ring-purple-500"
+                  >
+                    <option value="">-- Selecione uma Turma --</option>
+                    {classes.map((cl) => {
+                      const sch = schools.find((s) => s.id === cl.schoolId);
+                      return (
+                        <option key={cl.id} value={cl.id}>
+                          {cl.name} {sch ? `(${sch.name})` : ''}
+                        </option>
+                      );
+                    })}
+                  </select>
+
+                  <button
+                    type="button"
+                    disabled={!selectedClassIdForExport}
+                    onClick={() => selectedClassIdForExport && handleExportClassBackup(selectedClassIdForExport)}
+                    className="w-full py-2.5 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shadow cursor-pointer text-center"
+                  >
+                    <Download className="w-4 h-4" /> Baixar Dados da Turma (.json)
+                  </button>
+                </div>
+              </div>
+
+              {/* IMPORTADOR SELETIVO */}
+              <div className="p-4 bg-zinc-950/40 rounded-xl border border-zinc-800 space-y-3">
+                <div className="flex items-center gap-2 text-emerald-400">
+                  <Upload className="w-4 h-4" />
+                  <h4 className="text-xs font-bold uppercase tracking-wider">Restaurar / Importar Turma</h4>
+                </div>
+                <p className="text-[11px] text-zinc-500">
+                  Importa o backup de uma única turma. Se já existir uma turma de mesmo nome nesta escola, ela será substituída com seus dados. Outras turmas permanecem intactas.
+                </p>
+                
+                <label className="w-full py-2.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer text-center">
+                  <Upload className="w-4 h-4" />
+                  <span>Selecionar Arquivo da Turma</span>
+                  <input
+                    type="file"
+                    accept=".json"
+                    onChange={handleImportClassBackup}
+                    className="hidden"
+                  />
+                </label>
+              </div>
             </div>
           </div>
 
