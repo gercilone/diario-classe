@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db';
 import { Student, QUICK_SCORE_OPTIONS } from '../types';
-import { FileText, Printer, FileSpreadsheet, Award, CheckCircle, Calendar, AlertTriangle, Eye } from 'lucide-react';
+import { FileText, Printer, FileSpreadsheet, Award, CheckCircle, Calendar, AlertTriangle, Eye, BookOpen, Share2, Info } from 'lucide-react';
 
 interface TabEReportsProps {
   schoolId: number | undefined;
@@ -12,7 +12,7 @@ interface TabEReportsProps {
   isReadOnly?: boolean;
 }
 
-type ReportType = 'grades' | 'attendance' | 'vistos' | 'behavior';
+type ReportType = 'grades' | 'attendance' | 'vistos' | 'behavior' | 'lessons_count';
 
 export default function TabEReports({ schoolId, classId, subjectId, bimonthly, isReadOnly }: TabEReportsProps) {
   const [activeReport, setActiveReport] = useState<ReportType>('grades');
@@ -31,19 +31,33 @@ export default function TabEReports({ schoolId, classId, subjectId, bimonthly, i
   // Load bimonthly grades
   const grades = useLiveQuery(async () => {
     if (!subjectId) return [];
-    return db.bimonthlyGrades.where('subjectId').equals(subjectId).filter(g => g.bimonthly === bimonthly).toArray();
+    const targetSubjectId = Number(subjectId);
+    const targetBimonthly = Number(bimonthly);
+    return db.bimonthlyGrades
+      .filter(g => Number(g.subjectId) === targetSubjectId && Number(g.bimonthly) === targetBimonthly)
+      .toArray();
   }, [bimonthly, subjectId]) || [];
 
   // Load descriptor labels
   const descriptor = useLiveQuery(async () => {
     if (!classId || !subjectId) return null;
-    return db.assignmentDescriptions.where('[classId+subjectId+bimonthly]').equals([classId, subjectId, bimonthly]).first();
+    const targetClassId = Number(classId);
+    const targetSubjectId = Number(subjectId);
+    const targetBimonthly = Number(bimonthly);
+    return db.assignmentDescriptions
+      .filter(a => Number(a.classId) === targetClassId && Number(a.subjectId) === targetSubjectId && Number(a.bimonthly) === targetBimonthly)
+      .first();
   }, [classId, subjectId, bimonthly]);
 
   // Load seen columns & vistos
   const vistoColumns = useLiveQuery(async () => {
     if (!classId || !subjectId) return [];
-    return db.vistoColumns.where('classId').equals(classId).filter(c => c.subjectId === subjectId && c.bimonthly === bimonthly).toArray();
+    const targetClassId = Number(classId);
+    const targetSubjectId = Number(subjectId);
+    const targetBimonthly = Number(bimonthly);
+    return db.vistoColumns
+      .filter(c => Number(c.classId) === targetClassId && Number(c.subjectId) === targetSubjectId && Number(c.bimonthly) === targetBimonthly)
+      .toArray();
   }, [classId, subjectId, bimonthly]) || [];
 
   const studentVistos = useLiveQuery(async () => {
@@ -54,19 +68,46 @@ export default function TabEReports({ schoolId, classId, subjectId, bimonthly, i
   // Load behavior ranking scores
   const behaviorScores = useLiveQuery(async () => {
     if (!subjectId) return [];
-    return db.vistoRankingScores.where('subjectId').equals(subjectId).filter(s => s.bimonthly === bimonthly).toArray();
+    const targetSubjectId = Number(subjectId);
+    const targetBimonthly = Number(bimonthly);
+    return db.vistoRankingScores
+      .filter(s => Number(s.subjectId) === targetSubjectId && Number(s.bimonthly) === targetBimonthly)
+      .toArray();
   }, [subjectId, bimonthly]) || [];
 
   // Load attendance lessons and absences
   const lessons = useLiveQuery(async () => {
     if (!classId || !subjectId) return [];
-    return db.lessons.where('classId').equals(classId).filter(l => l.subjectId === subjectId && l.bimonthly === bimonthly).toArray();
+    const targetClassId = Number(classId);
+    const targetSubjectId = Number(subjectId);
+    const targetBimonthly = Number(bimonthly);
+    return db.lessons
+      .filter(l => Number(l.classId) === targetClassId && Number(l.subjectId) === targetSubjectId && Number(l.bimonthly) === targetBimonthly)
+      .toArray();
   }, [classId, subjectId, bimonthly]) || [];
 
   const attendance = useLiveQuery(async () => {
     if (!subjectId) return [];
-    return db.attendance.where('subjectId').equals(subjectId).filter(a => a.bimonthly === bimonthly).toArray();
+    const targetSubjectId = Number(subjectId);
+    const targetBimonthly = Number(bimonthly);
+    return db.attendance
+      .filter(a => Number(a.subjectId) === targetSubjectId && Number(a.bimonthly) === targetBimonthly)
+      .toArray();
   }, [subjectId, bimonthly]) || [];
+
+  // Load all classes in the current school
+  const allSchoolClasses = useLiveQuery(async () => {
+    if (!schoolId) return [];
+    const targetSchoolId = Number(schoolId);
+    return db.classes.filter(c => Number(c.schoolId) === targetSchoolId).toArray();
+  }, [schoolId]) || [];
+
+  // Load all lessons in the database for the selected subject
+  const allLessonsForSubject = useLiveQuery(async () => {
+    if (!subjectId) return [];
+    const targetSubjectId = Number(subjectId);
+    return db.lessons.filter(l => Number(l.subjectId) === targetSubjectId).toArray();
+  }, [subjectId]) || [];
 
   if (!schoolId || !classId || !subjectId) {
     return (
@@ -168,6 +209,14 @@ export default function TabEReports({ schoolId, classId, subjectId, bimonthly, i
     return { totalLessons, absences, pct };
   };
 
+  const getClassLessonsForBimonthly = (classIdVal: number, bim: number) => {
+    const cid = Number(classIdVal);
+    const bimNum = Number(bim);
+    return allLessonsForSubject
+      .filter((l) => Number(l.classId) === cid && Number(l.bimonthly) === bimNum)
+      .reduce((sum, curr) => sum + (curr.lessonCount || 0), 0);
+  };
+
   // Print Report Handler
   const handlePrint = () => {
     window.print();
@@ -175,12 +224,42 @@ export default function TabEReports({ schoolId, classId, subjectId, bimonthly, i
 
   // EXPORT CSV HANDLERS
   const handleExportCSV = () => {
-    if (students.length === 0) return;
+    if (activeReport !== 'lessons_count' && students.length === 0) return;
+    if (activeReport === 'lessons_count' && allSchoolClasses.length === 0) return;
 
     let csvContent = '';
     let fileName = '';
 
-    if (activeReport === 'grades') {
+    if (activeReport === 'lessons_count') {
+      fileName = `Contagem_Aulas_Materia_${subjectName.replace(/\s+/g, '_')}.csv`;
+      csvContent = `Contagem de Aulas Ministradas\n`;
+      csvContent += `Escola: ${schoolName}\nMatéria: ${subjectName}\n\n`;
+      csvContent += `Série / Turma,1º Bim,2º Bim,3º Bim,4º Bim,Total Anual\n`;
+
+      let totalBim1 = 0;
+      let totalBim2 = 0;
+      let totalBim3 = 0;
+      let totalBim4 = 0;
+
+      allSchoolClasses.forEach((cls) => {
+        const b1 = getClassLessonsForBimonthly(cls.id!, 1);
+        const b2 = getClassLessonsForBimonthly(cls.id!, 2);
+        const b3 = getClassLessonsForBimonthly(cls.id!, 3);
+        const b4 = getClassLessonsForBimonthly(cls.id!, 4);
+        const rowTotal = b1 + b2 + b3 + b4;
+
+        totalBim1 += b1;
+        totalBim2 += b2;
+        totalBim3 += b3;
+        totalBim4 += b4;
+
+        csvContent += `"${cls.name}",${b1},${b2},${b3},${b4},${rowTotal}\n`;
+      });
+
+      const schoolTotal = totalBim1 + totalBim2 + totalBim3 + totalBim4;
+      csvContent += `"TOTAL DA ESCOLA",${totalBim1},${totalBim2},${totalBim3},${totalBim4},${schoolTotal}\n`;
+    } 
+    else if (activeReport === 'grades') {
       fileName = `Boletim_Notas_Bimestre_${bimonthly}_Turma_${clazz?.name}.csv`;
       csvContent = `Relatório de Notas Bimestrais\n`;
       csvContent += `Escola: ${schoolName}\nTurma: ${className}\nDisciplina: ${subjectName}\nBimestre: ${bimonthly}º Bimestre\n\n`;
@@ -294,7 +373,7 @@ export default function TabEReports({ schoolId, classId, subjectId, bimonthly, i
       `}</style>
 
       {/* Main Panel */}
-      <div id="report-selectors-pane" className="grid grid-cols-2 md:grid-cols-4 gap-3 bg-zinc-900/60 p-3 rounded-2xl border border-zinc-800">
+      <div id="report-selectors-pane" className="grid grid-cols-2 md:grid-cols-5 gap-3 bg-zinc-900/60 p-3 rounded-2xl border border-zinc-800">
         <button
           id="select-report-grades-btn"
           onClick={() => setActiveReport('grades')}
@@ -345,6 +424,19 @@ export default function TabEReports({ schoolId, classId, subjectId, bimonthly, i
         >
           <Award className="w-4 h-4 text-yellow-400 shrink-0" />
           Estatísticas do Rank
+        </button>
+
+        <button
+          id="select-report-lessons-count-btn"
+          onClick={() => setActiveReport('lessons_count')}
+          className={`flex items-center gap-2 p-3 rounded-xl font-semibold text-xs tracking-tight border transition cursor-pointer ${
+            activeReport === 'lessons_count'
+              ? 'bg-blue-600 border-blue-500 text-white shadow shadow-blue-500/10'
+              : 'bg-zinc-950 border-zinc-800 text-zinc-300 hover:bg-zinc-900'
+          }`}
+        >
+          <BookOpen className="w-4 h-4 text-indigo-400 shrink-0" />
+          Contagem de Aulas
         </button>
       </div>
 
@@ -775,6 +867,109 @@ export default function TabEReports({ schoolId, classId, subjectId, bimonthly, i
               <p>* A pontuação é somada e subtraída de acordo com a conduta diária em classe do estudante.</p>
               <p>* Ocorrências positivas incluem: cópia integral de conteúdos (+1), resposta correta (+1), explicações à turma (+2), dever de casa (+1).</p>
               <p>* Ocorrências negativas incluem: atrapalhar aula (-2), conversar excessivamente (-1), não copiar matéria (-1), não fazer tarefa (-1).</p>
+            </div>
+          </div>
+        )}
+
+        {/* 5. LESSONS COUNT REPORT TABLE */}
+        {activeReport === 'lessons_count' && (
+          <div className="space-y-4">
+            {/* Export Header Block */}
+            <div className="bg-blue-950/20 border border-blue-900/30 p-5 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-4 print:hidden">
+              <div className="space-y-1 w-full text-left">
+                <h4 className="text-white font-bold text-sm flex items-center gap-1.5">
+                  <Share2 className="w-4 h-4 text-blue-400" /> Exportar Contagem de Aulas
+                </h4>
+                <p className="text-zinc-400 text-xs leading-relaxed max-w-2xl">
+                  Gere e salve a planilha contendo a contagem consolidada de aulas ministradas para a matéria <strong className="text-blue-400">'{subjectName}'</strong> em todas as turmas, separadas por bimestre e o total anual.
+                </p>
+              </div>
+              <button
+                id="export-lessons-count-csv-btn"
+                onClick={handleExportCSV}
+                className="px-4 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold text-xs flex items-center gap-2 transition shadow-lg shadow-blue-500/10 shrink-0 cursor-pointer w-full md:w-auto justify-center"
+              >
+                <FileSpreadsheet className="w-4 h-4" />
+                Exportar Planilha de Aulas (.csv)
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div className="flex items-center gap-1.5 border-b border-zinc-800/60 pb-2">
+                <Info className="w-4 h-4 text-blue-400" />
+                <h4 className="text-zinc-200 print:text-black font-bold text-xs uppercase tracking-wider">
+                  Quadro de Aulas Ministradas - Matéria: {subjectName}
+                </h4>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="bg-zinc-950/60 print:bg-zinc-200 border-b border-zinc-800 text-zinc-300 print:text-black font-bold uppercase text-[10px]">
+                      <th className="py-3 px-4">Série / Turma</th>
+                      <th className="py-3 px-3 text-center w-28">1º Bim</th>
+                      <th className="py-3 px-3 text-center w-28">2º Bim</th>
+                      <th className="py-3 px-3 text-center w-28">3º Bim</th>
+                      <th className="py-3 px-3 text-center w-28">4º Bim</th>
+                      <th className="py-3 px-4 text-center w-32 bg-blue-950/20 text-blue-400 font-bold border-l border-zinc-800">Total Anual</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-zinc-800/60 text-zinc-300 print:text-black">
+                    {(() => {
+                      let schoolBim1 = 0;
+                      let schoolBim2 = 0;
+                      let schoolBim3 = 0;
+                      let schoolBim4 = 0;
+
+                      return (
+                        <>
+                          {allSchoolClasses.map((cls) => {
+                            const b1 = getClassLessonsForBimonthly(cls.id!, 1);
+                            const b2 = getClassLessonsForBimonthly(cls.id!, 2);
+                            const b3 = getClassLessonsForBimonthly(cls.id!, 3);
+                            const b4 = getClassLessonsForBimonthly(cls.id!, 4);
+                            const classTotal = b1 + b2 + b3 + b4;
+
+                            schoolBim1 += b1;
+                            schoolBim2 += b2;
+                            schoolBim3 += b3;
+                            schoolBim4 += b4;
+
+                            return (
+                              <tr key={cls.id} className="hover:bg-white/5 font-semibold text-zinc-200 print:text-black">
+                                <td className="py-3 px-4 text-zinc-200 print:text-black">{cls.name}</td>
+                                <td className="py-3 px-3 text-center font-mono">{b1}</td>
+                                <td className="py-3 px-3 text-center font-mono">{b2}</td>
+                                <td className="py-3 px-3 text-center font-mono">{b3}</td>
+                                <td className="py-3 px-3 text-center font-mono">{b4}</td>
+                                <td className="py-3 px-4 text-center font-mono font-extrabold bg-blue-950/10 text-blue-400 print:text-black">
+                                  {classTotal}
+                                </td>
+                              </tr>
+                            );
+                          })}
+
+                          {/* SCHOOL TOTAL ROW */}
+                          <tr className="bg-zinc-950/40 print:bg-zinc-100 font-black text-blue-400 print:text-black text-sm uppercase">
+                            <td className="py-3 px-4 font-extrabold text-blue-400 print:text-black">TOTAL DA ESCOLA</td>
+                            <td className="py-3 px-3 text-center font-mono">{schoolBim1}</td>
+                            <td className="py-3 px-3 text-center font-mono">{schoolBim2}</td>
+                            <td className="py-3 px-3 text-center font-mono">{schoolBim3}</td>
+                            <td className="py-3 px-3 text-center font-mono">{schoolBim4}</td>
+                            <td className="py-3 px-4 text-center font-mono font-black text-blue-400 print:text-black bg-blue-950/20">
+                              {schoolBim1 + schoolBim2 + schoolBim3 + schoolBim4}
+                            </td>
+                          </tr>
+                        </>
+                      );
+                    })()}
+                  </tbody>
+                </table>
+              </div>
+              <div className="text-[10px] text-zinc-500 font-medium pt-3 leading-relaxed">
+                <p>* Exibe o somatório das cargas horárias dadas por cada uma das turmas ativas na escola.</p>
+                <p>* A contagem é atualizada instantaneamente conforme os Diários de Aula são salvos na aba correspondente.</p>
+              </div>
             </div>
           </div>
         )}

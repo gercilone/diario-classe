@@ -61,25 +61,41 @@ export default function TabDAttendance({
   // Query lessons for this bimonthly, class, subject to calculate total workload given
   const allLessons = useLiveQuery(async () => {
     if (!classId || !subjectId) return [];
-    return db.lessons.where('classId').equals(classId).filter(l => l.subjectId === subjectId && l.bimonthly === bimonthly).toArray();
+    const targetClassId = Number(classId);
+    const targetSubjectId = Number(subjectId);
+    const targetBimonthly = Number(bimonthly);
+    return db.lessons
+      .filter(l => Number(l.classId) === targetClassId && Number(l.subjectId) === targetSubjectId && Number(l.bimonthly) === targetBimonthly)
+      .toArray();
   }, [classId, subjectId, bimonthly]) || [];
 
   // Query lesson on selected date
   const currentLesson = useLiveQuery(async () => {
     if (!classId || !subjectId || !selectedDate) return undefined;
-    return db.lessons.where('classId').equals(classId).filter(l => l.subjectId === subjectId && l.date === selectedDate).first();
+    const targetClassId = Number(classId);
+    const targetSubjectId = Number(subjectId);
+    return db.lessons
+      .filter(l => Number(l.classId) === targetClassId && Number(l.subjectId) === targetSubjectId && l.date === selectedDate)
+      .first();
   }, [classId, subjectId, selectedDate]);
 
   // Query all attendance for this subject and bimonthly to compute cumulative statistics
   const bimonthlyAttendance = useLiveQuery(async () => {
     if (!subjectId) return [];
-    return db.attendance.where('subjectId').equals(subjectId).filter(a => a.bimonthly === bimonthly).toArray();
+    const targetSubjectId = Number(subjectId);
+    const targetBimonthly = Number(bimonthly);
+    return db.attendance
+      .filter(a => Number(a.subjectId) === targetSubjectId && Number(a.bimonthly) === targetBimonthly)
+      .toArray();
   }, [subjectId, bimonthly]) || [];
 
   // Query attendance records for current selected date
   const dailyAttendance = useLiveQuery(async () => {
     if (!subjectId || !selectedDate) return [];
-    return db.attendance.where('subjectId').equals(subjectId).filter(a => a.date === selectedDate).toArray();
+    const targetSubjectId = Number(subjectId);
+    return db.attendance
+      .filter(a => Number(a.subjectId) === targetSubjectId && a.date === selectedDate)
+      .toArray();
   }, [subjectId, selectedDate]) || [];
 
   // Sync state with current lesson when selected date or loaded lesson changes
