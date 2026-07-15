@@ -209,3 +209,72 @@ export async function syncSingleRecord(
     console.error(`Error syncing single record on ${tableName}:`, error);
   }
 }
+
+// 3. COORDINATORS SYNC & MANAGEMENT
+export interface CoordinatorAccount {
+  username: string;
+  password:  string;
+  name: string;
+}
+
+export async function syncCoordinatorsListInCloud(): Promise<CoordinatorAccount[]> {
+  try {
+    const coordsCol = collection(firestore, 'coordinators');
+    const snapshot = await getDocs(coordsCol);
+    const cloudList: CoordinatorAccount[] = [];
+    
+    snapshot.forEach((doc) => {
+      cloudList.push(doc.data() as CoordinatorAccount);
+    });
+
+    // If no coordinator exists in the cloud, seed the default coordinator
+    if (cloudList.length === 0) {
+      const defaultCoord: CoordinatorAccount = {
+        username: 'coordenador',
+        password: '123',
+        name: 'Coordenador Geral'
+      };
+      await saveCoordinatorToCloud(defaultCoord);
+      cloudList.push(defaultCoord);
+    }
+
+    localStorage.setItem('portal_coordinators_list', JSON.stringify(cloudList));
+    return cloudList;
+  } catch (error) {
+    console.error('Error syncing coordinators list with cloud:', error);
+    const localStr = localStorage.getItem('portal_coordinators_list');
+    if (localStr) {
+      return JSON.parse(localStr);
+    }
+    // Final fallback
+    return [{ username: 'coordenador', password: '123', name: 'Coordenador Geral' }];
+  }
+}
+
+export async function saveCoordinatorToCloud(coord: CoordinatorAccount) {
+  try {
+    const usernameLower = coord.username.toLowerCase();
+    await setDoc(doc(firestore, 'coordinators', usernameLower), coord);
+  } catch (error) {
+    console.error('Error saving coordinator to cloud:', error);
+  }
+}
+
+export async function deleteCoordinatorFromCloud(username: string) {
+  try {
+    const usernameLower = username.toLowerCase();
+    await deleteDoc(doc(firestore, 'coordinators', usernameLower));
+  } catch (error) {
+    console.error('Error deleting coordinator from cloud:', error);
+  }
+}
+
+export async function deleteProfessorFromCloud(username: string) {
+  try {
+    const usernameLower = username.toLowerCase();
+    await deleteDoc(doc(firestore, 'professors', usernameLower));
+  } catch (error) {
+    console.error('Error deleting professor from cloud:', error);
+  }
+}
+

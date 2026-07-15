@@ -9,9 +9,10 @@ interface TabCGamificationProps {
   classId: number | undefined;
   subjectId: number | undefined;
   bimonthly: number;
+  isReadOnly?: boolean;
 }
 
-export default function TabCGamification({ schoolId, classId, subjectId, bimonthly }: TabCGamificationProps) {
+export default function TabCGamification({ schoolId, classId, subjectId, bimonthly, isReadOnly = false }: TabCGamificationProps) {
   const [selectedStudentIds, setSelectedStudentIds] = useState<number[]>([]);
   const [hasInitializedSelection, setHasInitializedSelection] = useState(false);
 
@@ -251,27 +252,31 @@ export default function TabCGamification({ schoolId, classId, subjectId, bimonth
             {/* Quick Score Options Grid */}
             <div className="space-y-2">
               <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-400">
-                {selectedStudentIds.length === 1 ? 'Toque para Atribuir Pontos:' : `Toque para Atribuir Pontos aos ${selectedStudentIds.length} Alunos:`}
+                {isReadOnly 
+                  ? 'Histórico de Comportamento (Somente Leitura):' 
+                  : selectedStudentIds.length === 1 ? 'Toque para Atribuir Pontos:' : `Toque para Atribuir Pontos aos ${selectedStudentIds.length} Alunos:`}
               </h4>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                {QUICK_SCORE_OPTIONS.map((opt) => (
-                  <button
-                    id={`assign-score-${opt.key}`}
-                    key={opt.key}
-                    type="button"
-                    onClick={() => handleAddScore(opt)}
-                    className={`flex items-center justify-between p-3 rounded-xl border text-left cursor-pointer transition transform active:scale-98 hover:-translate-y-0.5 select-none ${opt.color}`}
-                  >
-                    <div className="flex items-center gap-2.5">
-                      <span className="text-lg">{opt.icon}</span>
-                      <span className="text-xs font-semibold tracking-tight">{opt.label}</span>
-                    </div>
-                    <span className="text-xs font-mono font-extrabold px-2 py-1 bg-zinc-950/40 rounded-lg shrink-0">
-                      {opt.points > 0 ? `+${opt.points}` : opt.points}
-                    </span>
-                  </button>
-                ))}
-              </div>
+              {!isReadOnly && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  {QUICK_SCORE_OPTIONS.map((opt) => (
+                    <button
+                      id={`assign-score-${opt.key}`}
+                      key={opt.key}
+                      type="button"
+                      onClick={() => handleAddScore(opt)}
+                      className={`flex items-center justify-between p-3 rounded-xl border text-left cursor-pointer transition transform active:scale-98 hover:-translate-y-0.5 select-none ${opt.color}`}
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <span className="text-lg">{opt.icon}</span>
+                        <span className="text-xs font-semibold tracking-tight">{opt.label}</span>
+                      </div>
+                      <span className="text-xs font-mono font-extrabold px-2 py-1 bg-zinc-950/40 rounded-lg shrink-0">
+                        {opt.points > 0 ? `+${opt.points}` : opt.points}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Timeline for Selected Student */}
@@ -315,15 +320,17 @@ export default function TabCGamification({ schoolId, classId, subjectId, bimonth
                           <span className={`font-mono font-bold ${item.points > 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
                             {item.points > 0 ? `+${item.points}` : item.points}
                           </span>
-                          <button
-                            id={`delete-score-${item.id}`}
-                            type="button"
-                            onClick={() => handleDeleteScore(item.id!)}
-                            className="text-zinc-500 hover:text-rose-400 transition p-1 cursor-pointer"
-                            title="Remover ocorrência incorreta"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                          {!isReadOnly && (
+                            <button
+                              id={`delete-score-${item.id}`}
+                              type="button"
+                              onClick={() => handleDeleteScore(item.id!)}
+                              className="text-zinc-500 hover:text-rose-400 transition p-1 cursor-pointer"
+                              title="Remover ocorrência incorreta"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                         </div>
                       </div>
                     );

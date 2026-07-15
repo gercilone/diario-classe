@@ -8,7 +8,7 @@ import TabCGamification from './components/TabC_Gamification';
 import TabDAttendance from './components/TabD_Attendance';
 import TabEReports from './components/TabE_Reports';
 import TabFSettings from './components/TabF_Settings';
-import { FileText, CheckSquare, Trophy, Calendar, FileBarChart2, Settings, Sparkles, Lock, User, Eye, EyeOff, LogOut, Key, AlertTriangle, Plus } from 'lucide-react';
+import { FileText, CheckSquare, Trophy, Calendar, FileBarChart2, Settings, Sparkles, Lock, User, Eye, EyeOff, LogOut, Key, AlertTriangle, Plus, ShieldAlert, Shield, Search, UserPlus, Trash2, ArrowLeft, Check, LogIn, Users } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 type TabKey = 'attendance' | 'grades' | 'vistos' | 'gamification' | 'reports' | 'settings';
@@ -88,6 +88,34 @@ export default function App() {
   const [selectedBimonthly, setSelectedBimonthly] = useState<number>(1);
   const [activeTab, setActiveTab] = useState<TabKey>('attendance');
 
+  // ROLE & COORD STATES
+  const [userRole, setUserRole] = useState<'teacher' | 'coordinator'>(() => {
+    return (localStorage.getItem('portal_user_role') as 'teacher' | 'coordinator') || 'teacher';
+  });
+  const [isInspectingMode, setIsInspectingMode] = useState<boolean>(() => {
+    return localStorage.getItem('portal_is_inspecting_mode') === 'true';
+  });
+  const [coordinators, setCoordinators] = useState<any[]>(() => {
+    try {
+      const localCoords = localStorage.getItem('portal_coordinators_list');
+      return localCoords ? JSON.parse(localCoords) : [{ username: 'coordenador', password: '123', name: 'Coordenador Geral' }];
+    } catch (e) {
+      return [{ username: 'coordenador', password: '123', name: 'Coordenador Geral' }];
+    }
+  });
+
+  // Coordinator dashboard states
+  const [coordActiveTab, setCoordActiveTab] = useState<'inspect' | 'accounts'>('inspect');
+  const [searchTeacherQuery, setSearchTeacherQuery] = useState('');
+  
+  // Coordinator Account creation form
+  const [newAccRole, setNewAccRole] = useState<'teacher' | 'coordinator'>('teacher');
+  const [newAccName, setNewAccName] = useState('');
+  const [newAccUser, setNewAccUser] = useState('');
+  const [newAccPass, setNewAccPass] = useState('');
+  const [accSuccessMessage, setAccSuccessMessage] = useState('');
+  const [accErrorMessage, setAccErrorMessage] = useState('');
+
   // TEACHER PROFILE & AUTHENTICATION STATES
   const [professors, setProfessors] = useState<ProfessorAccount[]>(() => getProfessorsList());
   const [selectedProf, setSelectedProf] = useState<ProfessorAccount | null>(null);
@@ -115,6 +143,7 @@ export default function App() {
   const [rememberMe, setRememberMe] = useState(false);
   const [loginError, setLoginError] = useState('');
   const [showLoginPass, setShowLoginPass] = useState(false);
+  const [showManualLogin, setShowManualLogin] = useState(false);
 
   // PASSWORD RECOVERY STATES
   const [isRecoveryOpen, setIsRecoveryOpen] = useState(false);
@@ -143,18 +172,72 @@ export default function App() {
   const handleLogout = () => {
     sessionStorage.removeItem('portal_is_authenticated');
     localStorage.removeItem('portal_is_authenticated_persistent');
+    localStorage.removeItem('portal_active_user');
+    localStorage.removeItem('portal_active_user_db');
+    localStorage.removeItem('portal_user_role');
+    localStorage.removeItem('portal_is_inspecting_mode');
+    localStorage.removeItem('portal_coord_logged_in_username');
+    localStorage.removeItem('portal_teacher_name');
+    localStorage.removeItem('portal_username');
+    localStorage.removeItem('portal_password');
+    localStorage.removeItem('portal_auth_enabled');
+    localStorage.removeItem('portal_password_hint');
+    localStorage.removeItem('portal_security_question');
+    localStorage.removeItem('portal_security_answer');
+    
     setSelectedProf(null);
     setIsAuthenticated(false);
+    window.location.reload();
   };
 
   const handleLoginSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const matchingProf = selectedProf || professors.find(p => p.username.toLowerCase() === loginUser.trim().toLowerCase());
+    const u = loginUser.trim().toLowerCase();
+    const p = loginPass;
+
+    // Check coordinators list first
+    let coordinatorsList: any[] = [];
+    try {
+      const localCoords = localStorage.getItem('portal_coordinators_list');
+      if (localCoords) coordinatorsList = JSON.parse(localCoords);
+    } catch(err) {}
+
+    const matchingCoord = coordinatorsList.find(c => c.username.toLowerCase() === u);
+    if (matchingCoord) {
+      if (matchingCoord.password === p) {
+        localStorage.setItem('portal_active_user', matchingCoord.username);
+        localStorage.setItem('portal_user_role', 'coordinator');
+        localStorage.setItem('portal_is_inspecting_mode', 'false');
+        localStorage.setItem('portal_auth_enabled', 'true');
+        localStorage.setItem('portal_teacher_name', matchingCoord.name);
+        localStorage.setItem('portal_username', matchingCoord.username);
+        localStorage.setItem('portal_password', matchingCoord.password);
+        
+        if (rememberMe) {
+          localStorage.setItem('portal_is_authenticated_persistent', 'true');
+        } else {
+          sessionStorage.setItem('portal_is_authenticated', 'true');
+        }
+        setIsAuthenticated(true);
+        setUserRole('coordinator');
+        setLoginError('');
+        window.location.reload();
+        return;
+      } else {
+        setLoginError('Senha incorreta.');
+        return;
+      }
+    }
+
+    // Then check professors list
+    const matchingProf = selectedProf || professors.find(prof => prof.username.toLowerCase() === u);
 
     if (matchingProf) {
-      if (loginPass === matchingProf.password) {
+      if (p === matchingProf.password) {
         localStorage.setItem('portal_active_user', matchingProf.username);
         localStorage.setItem('portal_active_user_db', matchingProf.dbName);
+        localStorage.setItem('portal_user_role', 'teacher');
+        localStorage.setItem('portal_is_inspecting_mode', 'false');
         localStorage.setItem('portal_teacher_name', matchingProf.teacherName);
         localStorage.setItem('portal_username', matchingProf.username);
         localStorage.setItem('portal_password', matchingProf.password);
@@ -170,6 +253,7 @@ export default function App() {
         }
         setLoginError('');
         setIsAuthenticated(true);
+        setUserRole('teacher');
         setTeacherName(matchingProf.teacherName);
         setIsAuthEnabled(matchingProf.authEnabled);
         
@@ -237,6 +321,160 @@ export default function App() {
     setRegPass('');
 
     window.location.reload();
+  };
+
+  const handleSelectInspectTeacher = async (teacherUsername: string, teacherName: string) => {
+    // 1. Save original coordinator username
+    const currentCoord = localStorage.getItem('portal_active_user') || 'coordenador';
+    localStorage.setItem('portal_coord_logged_in_username', currentCoord);
+    
+    // 2. Set inspecting mode to true
+    localStorage.setItem('portal_is_inspecting_mode', 'true');
+    
+    // 3. Switch active user/db credentials to target teacher
+    localStorage.setItem('portal_active_user', teacherUsername);
+    localStorage.setItem('portal_active_user_db', `TeacherDatabase_${teacherUsername}`);
+    localStorage.setItem('portal_teacher_name', teacherName);
+    
+    // 4. Force a quick page reload to load the target database
+    window.location.reload();
+  };
+
+  const handleExitInspectingMode = () => {
+    const originalCoord = localStorage.getItem('portal_coord_logged_in_username') || 'coordenador';
+    
+    localStorage.setItem('portal_is_inspecting_mode', 'false');
+    localStorage.setItem('portal_active_user', originalCoord);
+    localStorage.removeItem('portal_active_user_db');
+    localStorage.removeItem('portal_coord_logged_in_username');
+    
+    // Restore coordinator name
+    const localCoords = localStorage.getItem('portal_coordinators_list');
+    if (localCoords) {
+      try {
+        const list = JSON.parse(localCoords);
+        const coord = list.find((c: any) => c.username === originalCoord);
+        if (coord) {
+          localStorage.setItem('portal_teacher_name', coord.name);
+        }
+      } catch(e) {}
+    }
+    
+    window.location.reload();
+  };
+
+  const handleCreateAccountSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAccSuccessMessage('');
+    setAccErrorMessage('');
+
+    const name = newAccName.trim();
+    const username = newAccUser.trim().toLowerCase();
+    const password = newAccPass;
+
+    if (!name || !username || !password) {
+      setAccErrorMessage('Preencha todos os campos.');
+      return;
+    }
+
+    if (password.length < 3) {
+      setAccErrorMessage('A senha deve conter pelo menos 3 caracteres.');
+      return;
+    }
+
+    // Check duplicate
+    const localProfessors = professors;
+    const duplicateProf = localProfessors.some(p => p.username.toLowerCase() === username);
+    const duplicateCoord = coordinators.some(c => c.username.toLowerCase() === username);
+
+    if (duplicateProf || duplicateCoord) {
+      setAccErrorMessage('Este nome de usuário já está cadastrado no sistema.');
+      return;
+    }
+
+    const { saveProfessorToCloud, saveCoordinatorToCloud } = await import('./firebase');
+
+    if (newAccRole === 'teacher') {
+      try {
+        const newProf = {
+          username,
+          password,
+          teacherName: name,
+          dbName: `TeacherDatabase_${username}`,
+          authEnabled: true
+        };
+        await saveProfessorToCloud(newProf);
+        
+        // Update local list
+        const updatedList = [...localProfessors, newProf];
+        localStorage.setItem('portal_professors_list', JSON.stringify(updatedList));
+        setProfessors(updatedList);
+        
+        setAccSuccessMessage('Professor cadastrado com sucesso!');
+        setNewAccName('');
+        setNewAccUser('');
+        setNewAccPass('');
+      } catch (err) {
+        console.error(err);
+        setAccErrorMessage('Erro ao cadastrar professor na nuvem.');
+      }
+    } else {
+      try {
+        const newCoord = {
+          username,
+          password,
+          name
+        };
+        await saveCoordinatorToCloud(newCoord);
+        
+        // Update local list
+        const updatedList = [...coordinators, newCoord];
+        localStorage.setItem('portal_coordinators_list', JSON.stringify(updatedList));
+        setCoordinators(updatedList);
+        
+        setAccSuccessMessage('Coordenador cadastrado com sucesso!');
+        setNewAccName('');
+        setNewAccUser('');
+        setNewAccPass('');
+      } catch (err) {
+        console.error(err);
+        setAccErrorMessage('Erro ao cadastrar coordenador na nuvem.');
+      }
+    }
+  };
+
+  const handleDeleteAccount = async (usernameToDelete: string, roleToDelete: 'teacher' | 'coordinator') => {
+    if (localStorage.getItem('portal_active_user') === usernameToDelete) {
+      return; // Can't delete self
+    }
+
+    const confirmDeletion = window.confirm(`Deseja realmente excluir permanentemente a conta de @${usernameToDelete}?`);
+    if (!confirmDeletion) return;
+
+    const { deleteProfessorFromCloud, deleteCoordinatorFromCloud } = await import('./firebase');
+
+    if (roleToDelete === 'teacher') {
+      try {
+        await deleteProfessorFromCloud(usernameToDelete);
+        const localList = professors;
+        const updatedList = localList.filter(p => p.username !== usernameToDelete);
+        localStorage.setItem('portal_professors_list', JSON.stringify(updatedList));
+        setProfessors(updatedList);
+      } catch (err) {
+        console.error(err);
+        alert('Erro ao excluir conta de professor.');
+      }
+    } else {
+      try {
+        await deleteCoordinatorFromCloud(usernameToDelete);
+        const updatedList = coordinators.filter(c => c.username !== usernameToDelete);
+        localStorage.setItem('portal_coordinators_list', JSON.stringify(updatedList));
+        setCoordinators(updatedList);
+      } catch (err) {
+        console.error(err);
+        alert('Erro ao excluir conta de coordenador.');
+      }
+    }
   };
 
   function proforsMatch(user: string) {
@@ -322,6 +560,17 @@ export default function App() {
   // Seed database silently on mount if empty, and sync with Firebase online database
   useEffect(() => {
     const initDb = async () => {
+      // Sync coordinator profiles list from the cloud on mount
+      try {
+        const { syncCoordinatorsListInCloud } = await import('./firebase');
+        const updatedList = await syncCoordinatorsListInCloud();
+        if (updatedList && updatedList.length > 0) {
+          setCoordinators(updatedList);
+        }
+      } catch (err) {
+        console.error('Error syncing coordinators list on mount:', err);
+      }
+
       // Sync professor profiles list from the cloud on mount
       try {
         const { syncProfessorsListInCloud } = await import('./firebase');
@@ -335,7 +584,10 @@ export default function App() {
 
       // Check active teacher data sync
       const activeUser = localStorage.getItem('portal_active_user');
-      if (activeUser && isAuthenticated) {
+      const role = localStorage.getItem('portal_user_role') || 'teacher';
+      const inspecting = localStorage.getItem('portal_is_inspecting_mode') === 'true';
+
+      if (activeUser && isAuthenticated && (role === 'teacher' || inspecting)) {
         try {
           const schoolCount = await db.schools.count();
           if (schoolCount === 0) {
@@ -363,8 +615,10 @@ export default function App() {
           await seedDatabase();
         }
       } else {
-        // Fallback for default unauthenticated startup
-        await seedDatabase();
+        // Fallback for default unauthenticated startup or coordinator view (no local db sync needed unless inspecting)
+        if (!activeUser || role === 'teacher') {
+          await seedDatabase();
+        }
       }
     };
     initDb();
@@ -405,6 +659,7 @@ export default function App() {
             classId={selectedClassId}
             subjectId={selectedSubjectId}
             bimonthly={selectedBimonthly}
+            isReadOnly={isInspectingMode}
           />
         );
       case 'vistos':
@@ -414,6 +669,7 @@ export default function App() {
             classId={selectedClassId}
             subjectId={selectedSubjectId}
             bimonthly={selectedBimonthly}
+            isReadOnly={isInspectingMode}
           />
         );
       case 'gamification':
@@ -423,6 +679,7 @@ export default function App() {
             classId={selectedClassId}
             subjectId={selectedSubjectId}
             bimonthly={selectedBimonthly}
+            isReadOnly={isInspectingMode}
           />
         );
       case 'attendance':
@@ -435,6 +692,7 @@ export default function App() {
             onSelectSchool={setSelectedSchoolId}
             onSelectClass={setSelectedClassId}
             onSelectSubject={setSelectedSubjectId}
+            isReadOnly={isInspectingMode}
           />
         );
       case 'reports':
@@ -444,10 +702,11 @@ export default function App() {
             classId={selectedClassId}
             subjectId={selectedSubjectId}
             bimonthly={selectedBimonthly}
+            isReadOnly={isInspectingMode}
           />
         );
       case 'settings':
-        return <TabFSettings teacherName={teacherName} setTeacherName={setTeacherName} onSecuritySaved={handleSecuritySaved} />;
+        return <TabFSettings teacherName={teacherName} setTeacherName={setTeacherName} onSecuritySaved={handleSecuritySaved} isReadOnly={isInspectingMode} />;
       default:
         return null;
     }
@@ -870,6 +1129,79 @@ export default function App() {
                 </div>
               </form>
             </div>
+          ) : showManualLogin ? (
+            /* Manual username and password login form (for Coordinator and non-profile-grid accounts) */
+            <div className="bg-zinc-900 border border-zinc-800 p-8 rounded-3xl shadow-2xl shadow-black/50 space-y-6 w-full max-w-sm">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowManualLogin(false);
+                  setLoginError('');
+                }}
+                className="inline-flex items-center gap-1.5 text-xs text-zinc-400 hover:text-white transition cursor-pointer"
+              >
+                ← Escolher perfil cadastrado
+              </button>
+
+              <div>
+                <h3 className="text-white font-bold text-base flex items-center gap-2">
+                  <User className="w-5 h-5 text-blue-400" /> Entrar com Credenciais
+                </h3>
+                <p className="text-xs text-zinc-500 mt-1">Acesso para coordenadores ou novos professores</p>
+              </div>
+
+              <form onSubmit={handleLoginSubmit} className="space-y-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-zinc-400 block">Nome de Usuário (Login)</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Digite seu usuário"
+                    value={loginUser}
+                    onChange={(e) => setLoginUser(e.target.value.toLowerCase())}
+                    className="bg-zinc-950 border border-zinc-800 text-zinc-200 text-xs rounded-xl px-4 py-3 w-full focus:ring-1 focus:ring-blue-500 focus:outline-none placeholder-zinc-600 font-mono transition"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-zinc-400 block">Sua Senha</label>
+                  <div className="relative">
+                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-500">
+                      <Key className="w-4 h-4" />
+                    </span>
+                    <input
+                      type={showLoginPass ? 'text' : 'password'}
+                      required
+                      placeholder="Digite sua senha"
+                      value={loginPass}
+                      onChange={(e) => setLoginPass(e.target.value)}
+                      className="bg-zinc-950 border border-zinc-800 text-zinc-200 text-xs rounded-xl pl-10 pr-10 py-3 w-full focus:ring-1 focus:ring-blue-500 focus:outline-none placeholder-zinc-650 transition"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowLoginPass(!showLoginPass)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300 cursor-pointer"
+                    >
+                      {showLoginPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+
+                {loginError && (
+                  <div className="p-3 bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs rounded-xl flex items-center gap-2">
+                    <div className="w-1.5 h-1.5 bg-rose-500 rounded-full shrink-0" />
+                    <span>{loginError}</span>
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  className="w-full py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-lg shadow-blue-500/10 cursor-pointer"
+                >
+                  <LogIn className="w-4 h-4" /> Acessar Painel
+                </button>
+              </form>
+            </div>
           ) : (
             /* Profile Chooser Card (Default) */
             <div className="bg-zinc-900 border border-zinc-800 p-8 rounded-3xl shadow-2xl shadow-black/50 space-y-6 w-full max-w-sm text-center">
@@ -907,27 +1239,29 @@ export default function App() {
                   );
                 })}
 
-                {/* Add new professor card */}
+                {/* Coordinator / manual login trigger button */}
                 <button
                   type="button"
                   onClick={() => {
-                    setIsRegistering(true);
+                    setShowManualLogin(true);
+                    setLoginUser('');
+                    setLoginPass('');
                     setLoginError('');
                   }}
                   className="group flex flex-col items-center justify-center gap-2 p-3.5 bg-zinc-950/20 hover:bg-zinc-950 border border-dashed border-zinc-800 hover:border-blue-500/50 rounded-2xl transition duration-200 cursor-pointer min-h-[114px]"
                 >
                   <div className="w-9 h-9 rounded-full bg-zinc-900 border border-zinc-800 group-hover:border-blue-500/50 flex items-center justify-center text-zinc-400 group-hover:text-blue-400 transition duration-200 shrink-0">
-                    <Plus className="w-4 h-4" />
+                    <LogIn className="w-4 h-4" />
                   </div>
                   <span className="text-xs font-bold text-zinc-500 group-hover:text-blue-400 transition duration-200">
-                    Adicionar Perfil
+                    Acesso Especial
                   </span>
                 </button>
               </div>
 
               {/* Minimal offline note */}
-              <div className="text-[10px] text-zinc-650 pt-3 border-t border-zinc-850 leading-relaxed text-zinc-500">
-                Cada professor possui um banco de dados totalmente isolado e armazenado com segurança local neste navegador.
+              <div className="text-[10px] text-zinc-500 pt-3 border-t border-zinc-850 leading-relaxed">
+                Cada professor possui um banco de dados totalmente isolado e sincronizado com segurança na nuvem.
               </div>
             </div>
           )}
@@ -964,9 +1298,319 @@ export default function App() {
     );
   }
 
+  if (userRole === 'coordinator' && !isInspectingMode) {
+    return (
+      <div id="portal-app-root" className="min-h-screen bg-[#09090b] text-zinc-100 flex flex-col font-sans antialiased selection:bg-amber-600/30 selection:text-amber-200">
+        {/* Top Header */}
+        <header className="bg-zinc-900 border-b border-zinc-800 p-4 sticky top-0 z-50">
+          <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-amber-600/15 border border-amber-500/30 text-amber-500 rounded-xl flex items-center justify-center shrink-0">
+                <Shield className="w-5 h-5" />
+              </div>
+              <div className="min-w-0">
+                <h1 className="text-sm font-black text-white flex items-center gap-1.5 uppercase tracking-wide">
+                  Painel do Coordenador
+                  <span className="text-[9px] bg-amber-500/20 text-amber-400 px-1.5 py-0.5 rounded-full font-bold uppercase tracking-normal">ADMIN</span>
+                </h1>
+                <p className="text-[11px] text-zinc-400 truncate">{teacherName}</p>
+              </div>
+            </div>
+            
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-750 border border-zinc-700 text-zinc-300 hover:text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
+              >
+                <LogOut className="w-3.5 h-3.5" /> Sair
+              </button>
+            </div>
+          </div>
+        </header>
+
+        {/* Dashboard Navigation Tabs */}
+        <div className="bg-zinc-900/40 border-b border-zinc-800/50">
+          <div className="max-w-7xl mx-auto px-4 flex items-center gap-2">
+            <button
+              onClick={() => setCoordActiveTab('inspect')}
+              className={`px-4 py-3 font-bold text-xs border-b-2 transition flex items-center gap-2 cursor-pointer ${
+                coordActiveTab === 'inspect' ? 'border-amber-500 text-amber-400 bg-amber-500/5' : 'border-transparent text-zinc-400 hover:text-zinc-300'
+              }`}
+            >
+              <Users className="w-4 h-4" /> Inspeção de Diários
+            </button>
+            <button
+              onClick={() => {
+                setCoordActiveTab('accounts');
+                setAccSuccessMessage('');
+                setAccErrorMessage('');
+              }}
+              className={`px-4 py-3 font-bold text-xs border-b-2 transition flex items-center gap-2 cursor-pointer ${
+                coordActiveTab === 'accounts' ? 'border-amber-500 text-amber-400 bg-amber-500/5' : 'border-transparent text-zinc-400 hover:text-zinc-300'
+              }`}
+            >
+              <UserPlus className="w-4 h-4" /> Gerenciar Contas
+            </button>
+          </div>
+        </div>
+
+        {/* Dashboard Content */}
+        <main className="flex-1 max-w-7xl w-full mx-auto p-4 md:p-6 pb-20">
+          {coordActiveTab === 'inspect' ? (
+            /* INSPECT MODE: List all teachers for inspection */
+            <div className="space-y-6">
+              <div className="bg-zinc-900 border border-zinc-800 p-6 rounded-2xl space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div>
+                    <h3 className="text-white font-bold text-sm">Visualizar Diários de Professores</h3>
+                    <p className="text-xs text-zinc-500">Selecione qualquer professor abaixo para entrar no modo de inspeção (leitura e consulta) do diário de classe dele.</p>
+                  </div>
+                  
+                  <div className="relative max-w-md w-full">
+                    <Search className="w-4 h-4 text-zinc-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      placeholder="Buscar professor por nome ou usuário..."
+                      value={searchTeacherQuery}
+                      onChange={(e) => setSearchTeacherQuery(e.target.value)}
+                      className="bg-zinc-950 border border-zinc-800 text-zinc-300 text-xs rounded-xl pl-9 pr-4 py-2.5 w-full focus:ring-1 focus:ring-amber-500 focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 pt-2">
+                  {professors
+                    .filter(p => 
+                      p.teacherName.toLowerCase().includes(searchTeacherQuery.toLowerCase()) || 
+                      p.username.toLowerCase().includes(searchTeacherQuery.toLowerCase())
+                    )
+                    .map((p) => (
+                      <div key={p.username} className="bg-zinc-950/40 border border-zinc-850 hover:border-zinc-800 rounded-2xl p-4 flex flex-col justify-between gap-4 transition duration-250">
+                        <div className="flex items-start gap-3">
+                          <div className={`w-11 h-11 rounded-xl bg-gradient-to-tr ${getGradientForName(p.teacherName)} flex items-center justify-center text-white text-sm font-black shrink-0`}>
+                            {p.teacherName.substring(0, 2).toUpperCase()}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <span className="text-xs font-bold text-zinc-200 block truncate">{p.teacherName}</span>
+                            <span className="text-[10px] text-zinc-500 font-mono block">@{p.username}</span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between gap-2 pt-2 border-t border-zinc-900">
+                          <span className="text-[10px] text-zinc-500 flex items-center gap-1">
+                            <Lock className="w-3 h-3 text-zinc-650" /> Senha: {p.password}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleSelectInspectTeacher(p.username, p.teacherName)}
+                            className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white font-bold text-[11px] rounded-lg transition flex items-center gap-1 cursor-pointer shrink-0"
+                          >
+                            <Eye className="w-3.5 h-3.5" /> Inspecionar Diário
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  }
+                  {professors.length === 0 && (
+                    <div className="col-span-full py-12 text-center text-zinc-500 text-xs">
+                      Nenhum professor cadastrado no sistema. Vá em "Gerenciar Contas" para criar o primeiro cadastro.
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          ) : (
+            /* ACCOUNTS MODE: Create and delete accounts */
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* Card 1: Account Creation Form */}
+              <div className="bg-zinc-900 border border-zinc-800 p-6 rounded-2xl space-y-4">
+                <h3 className="text-white font-bold text-sm flex items-center gap-2">
+                  <UserPlus className="w-4 h-4 text-amber-500" /> Cadastrar Nova Conta
+                </h3>
+                <p className="text-xs text-zinc-500">Crie contas para professores acessarem o portal ou para outros coordenadores gerais.</p>
+
+                <form onSubmit={handleCreateAccountSubmit} className="space-y-4">
+                  {/* Role selection */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-zinc-400 block">Tipo de Usuário</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setNewAccRole('teacher')}
+                        className={`py-2 rounded-xl text-xs font-bold transition border cursor-pointer ${
+                          newAccRole === 'teacher' ? 'bg-amber-600/10 border-amber-500 text-amber-400 animate-in fade-in' : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:text-white'
+                        }`}
+                      >
+                        Professor
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setNewAccRole('coordinator')}
+                        className={`py-2 rounded-xl text-xs font-bold transition border cursor-pointer ${
+                          newAccRole === 'coordinator' ? 'bg-amber-600/10 border-amber-500 text-amber-400 animate-in fade-in' : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:text-white'
+                        }`}
+                      >
+                        Coordenador
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Name field */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-zinc-400 block">Nome Completo</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="Ex: Prof. Dr. André Costa"
+                      value={newAccName}
+                      onChange={(e) => setNewAccName(e.target.value)}
+                      className="bg-zinc-950 border border-zinc-800 text-zinc-200 text-xs rounded-xl px-3 py-2.5 w-full focus:ring-1 focus:ring-amber-500 focus:outline-none"
+                    />
+                  </div>
+
+                  {/* Username login field */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-zinc-400 block">Usuário de Acesso (Login)</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="Ex: andrecosta"
+                      value={newAccUser}
+                      onChange={(e) => setNewAccUser(e.target.value.toLowerCase().replace(/[^a-z0-9]/g, ''))}
+                      className="bg-zinc-950 border border-zinc-800 text-zinc-200 text-xs rounded-xl px-3 py-2.5 w-full focus:ring-1 focus:ring-amber-500 focus:outline-none font-mono"
+                    />
+                  </div>
+
+                  {/* Password field */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-zinc-400 block">Senha de Acesso</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="Mínimo de 3 caracteres"
+                      value={newAccPass}
+                      onChange={(e) => setNewAccPass(e.target.value)}
+                      className="bg-zinc-950 border border-zinc-800 text-zinc-200 text-xs rounded-xl px-3 py-2.5 w-full focus:ring-1 focus:ring-amber-500 focus:outline-none"
+                    />
+                  </div>
+
+                  {/* Message alerts */}
+                  {accSuccessMessage && (
+                    <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs rounded-xl animate-in zoom-in-95">
+                      {accSuccessMessage}
+                    </div>
+                  )}
+
+                  {accErrorMessage && (
+                    <div className="p-3 bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs rounded-xl animate-in zoom-in-95">
+                      {accErrorMessage}
+                    </div>
+                  )}
+
+                  <button
+                    type="submit"
+                    className="w-full py-2.5 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1 cursor-pointer shadow-lg shadow-amber-500/15"
+                  >
+                    <Plus className="w-4 h-4" /> Criar Conta
+                  </button>
+                </form>
+              </div>
+
+              {/* List and manage existing accounts */}
+              <div className="bg-zinc-900 border border-zinc-800 p-6 rounded-2xl lg:col-span-2 space-y-4">
+                <h3 className="text-white font-bold text-sm flex items-center gap-2">
+                  <Users className="w-4 h-4 text-amber-500" /> Contas Ativas no Sistema
+                </h3>
+                
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs text-zinc-350 text-left">
+                    <thead>
+                      <tr className="border-b border-zinc-850 text-zinc-500 uppercase tracking-wider text-[10px] font-bold">
+                        <th className="py-2.5">Nome Completo</th>
+                        <th className="py-2.5">Usuário</th>
+                        <th className="py-2.5">Tipo</th>
+                        <th className="py-2.5">Senha</th>
+                        <th className="py-2.5 text-right">Ações</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-zinc-850/60">
+                      {/* List Coordinators */}
+                      {coordinators.map((c) => (
+                        <tr key={c.username} className="hover:bg-zinc-950/20">
+                          <td className="py-3 font-semibold text-zinc-100">{c.name}</td>
+                          <td className="py-3 font-mono text-zinc-400">@{c.username}</td>
+                          <td className="py-3">
+                            <span className="text-[10px] bg-amber-500/10 text-amber-400 font-bold px-1.5 py-0.5 rounded-full uppercase">Coordenador</span>
+                          </td>
+                          <td className="py-3 text-zinc-500 font-mono">{c.password}</td>
+                          <td className="py-3 text-right">
+                            <button
+                              type="button"
+                              disabled={localStorage.getItem('portal_active_user') === c.username}
+                              onClick={() => handleDeleteAccount(c.username, 'coordinator')}
+                              className="text-zinc-500 hover:text-rose-400 disabled:opacity-30 disabled:hover:text-zinc-500 p-1 transition cursor-pointer"
+                              title="Excluir Coordenador"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+
+                      {/* List Professors */}
+                      {professors.map((p) => (
+                        <tr key={p.username} className="hover:bg-zinc-950/20">
+                          <td className="py-3 font-semibold text-zinc-100">{p.teacherName}</td>
+                          <td className="py-3 font-mono text-zinc-400">@{p.username}</td>
+                          <td className="py-3">
+                            <span className="text-[10px] bg-blue-500/10 text-blue-400 font-bold px-1.5 py-0.5 rounded-full uppercase">Professor</span>
+                          </td>
+                          <td className="py-3 text-zinc-500 font-mono">{p.password}</td>
+                          <td className="py-3 text-right">
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteAccount(p.username, 'teacher')}
+                              className="text-zinc-500 hover:text-rose-400 p-1 transition cursor-pointer"
+                              title="Excluir Professor"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+        </main>
+      </div>
+    );
+  }
+
   return (
     <div id="portal-app-root" className="min-h-screen bg-[#09090b] text-zinc-100 flex flex-col font-sans antialiased selection:bg-blue-600/30 selection:text-blue-200">
       
+      {isInspectingMode && (
+        <div className="bg-amber-600 text-zinc-950 text-xs font-bold py-2.5 px-4 flex items-center justify-between gap-4 shadow-md relative z-50 animate-in slide-in-from-top duration-300 select-none">
+          <div className="flex items-center gap-2">
+            <ShieldAlert className="w-4 h-4 animate-bounce" />
+            <span>
+              MODO DE INSPEÇÃO (SOMENTE LEITURA): Você está visualizando o diário do(a) professor(a) <strong className="underline text-black font-extrabold">{teacherName}</strong>. Alterações estão bloqueadas.
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={handleExitInspectingMode}
+            className="bg-zinc-950 hover:bg-zinc-900 text-white font-extrabold px-3 py-1 rounded-lg transition shrink-0 flex items-center gap-1 cursor-pointer"
+          >
+            <ArrowLeft className="w-3.5 h-3.5" /> Voltar ao Painel
+          </button>
+        </div>
+      )}
+
       {/* Top filter navbar */}
       <HeaderFilters
         selectedSchoolId={selectedSchoolId}

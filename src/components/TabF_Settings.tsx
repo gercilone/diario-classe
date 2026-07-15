@@ -8,9 +8,10 @@ interface TabFSettingsProps {
   teacherName: string;
   setTeacherName: (name: string) => void;
   onSecuritySaved?: () => void;
+  isReadOnly?: boolean;
 }
 
-export default function TabFSettings({ teacherName, setTeacherName, onSecuritySaved }: TabFSettingsProps) {
+export default function TabFSettings({ teacherName, setTeacherName, onSecuritySaved, isReadOnly = false }: TabFSettingsProps) {
   const [activeSubTab, setActiveSubTab] = useState<'perfil' | 'cadastros' | 'grade' | 'backup'>('perfil');
 
   // PROFILE & SECURITY STATES
@@ -801,6 +802,23 @@ export default function TabFSettings({ teacherName, setTeacherName, onSecuritySa
     const days = ['', 'Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado', 'Domingo'];
     return days[dayNum] || '';
   };
+
+  if (isReadOnly) {
+    return (
+      <div id="settings-tab-content" className="bg-zinc-900 border border-zinc-800 p-8 rounded-2xl text-center space-y-4 max-w-xl mx-auto my-12 shadow-xl">
+        <div className="w-12 h-12 bg-zinc-950 rounded-xl flex items-center justify-center mx-auto text-amber-500 border border-zinc-800">
+          <Shield className="w-6 h-6" />
+        </div>
+        <div className="space-y-2">
+          <h3 className="text-white font-bold text-base">Configurações Desabilitadas</h3>
+          <p className="text-xs text-zinc-400 leading-relaxed">
+            Você está atualmente no <strong>Modo de Inspeção (Somente Leitura)</strong> do diário de <strong>{teacherName}</strong>. 
+            Como coordenador, você não possui permissão para modificar as turmas, calendários, alunos, senhas ou configurações de outros professores.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div id="settings-tab-content" className="space-y-6">

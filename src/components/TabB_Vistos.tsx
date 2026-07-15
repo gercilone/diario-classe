@@ -9,9 +9,10 @@ interface TabBVistosProps {
   classId: number | undefined;
   subjectId: number | undefined;
   bimonthly: number;
+  isReadOnly?: boolean;
 }
 
-export default function TabBVistos({ schoolId, classId, subjectId, bimonthly }: TabBVistosProps) {
+export default function TabBVistos({ schoolId, classId, subjectId, bimonthly, isReadOnly = false }: TabBVistosProps) {
   const [showAddColumn, setShowAddColumn] = useState(false);
   const [newColDate, setNewColDate] = useState(new Date().toISOString().split('T')[0]);
   const [newColTitle, setNewColTitle] = useState('');
@@ -185,14 +186,16 @@ export default function TabBVistos({ schoolId, classId, subjectId, bimonthly }: 
             Exportar CSV
           </button>
           
-          <button
-            id="toggle-add-column-btn"
-            onClick={() => setShowAddColumn(!showAddColumn)}
-            className="px-3.5 py-2 bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs rounded-xl shadow-lg shadow-blue-500/10 flex items-center gap-1.5 transition"
-          >
-            <Plus className="w-4 h-4" />
-            Adicionar Aula/Visto
-          </button>
+          {!isReadOnly && (
+            <button
+              id="toggle-add-column-btn"
+              onClick={() => setShowAddColumn(!showAddColumn)}
+              className="px-3.5 py-2 bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs rounded-xl shadow-lg shadow-blue-500/10 flex items-center gap-1.5 transition"
+            >
+              <Plus className="w-4 h-4" />
+              Adicionar Aula/Visto
+            </button>
+          )}
         </div>
       </div>
 
@@ -273,15 +276,17 @@ export default function TabBVistos({ schoolId, classId, subjectId, bimonthly }: 
                     <span className="text-[10px] text-zinc-500 font-mono block mt-0.5">
                       {col.date.split('-').reverse().slice(0, 2).join('/')}
                     </span>
-                    <button
-                      id={`delete-column-btn-${col.id}`}
-                      type="button"
-                      onClick={() => handleDeleteColumn(col.id!)}
-                      className="mt-1 text-zinc-500 hover:text-red-400 transition p-1 rounded hover:bg-zinc-800"
-                      title="Excluir coluna"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
+                    {!isReadOnly && (
+                      <button
+                        id={`delete-column-btn-${col.id}`}
+                        type="button"
+                        onClick={() => handleDeleteColumn(col.id!)}
+                        className="mt-1 text-zinc-500 hover:text-red-400 transition p-1 rounded hover:bg-zinc-800"
+                        title="Excluir coluna"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                   </div>
                 </th>
               ))}
@@ -323,14 +328,15 @@ export default function TabBVistos({ schoolId, classId, subjectId, bimonthly }: 
                           <button
                             id={`visto-check-${student.id}-${col.id}`}
                             type="button"
-                            onClick={() => handleToggleVisto(student.id!, col.id!)}
-                            className="inline-flex items-center justify-center w-10 h-10 rounded-xl transition cursor-pointer active:scale-95 text-xl"
+                            disabled={isReadOnly}
+                            onClick={() => !isReadOnly && handleToggleVisto(student.id!, col.id!)}
+                            className="inline-flex items-center justify-center w-10 h-10 rounded-xl transition cursor-pointer active:scale-95 disabled:pointer-events-none text-xl"
                             title={`${student.name} - ${col.title}`}
                           >
                             {checked ? (
                               <CheckSquare className="w-5.5 h-5.5 text-emerald-400" />
                             ) : (
-                              <Square className="w-5.5 h-5.5 text-zinc-750 hover:text-zinc-500" />
+                              <Square className="w-5.5 h-5.5 text-zinc-750 hover:text-zinc-500 disabled:hover:text-zinc-750" />
                             )}
                           </button>
                         </td>

@@ -9,11 +9,12 @@ interface TabEReportsProps {
   classId: number | undefined;
   subjectId: number | undefined;
   bimonthly: number;
+  isReadOnly?: boolean;
 }
 
 type ReportType = 'grades' | 'attendance' | 'vistos' | 'behavior';
 
-export default function TabEReports({ schoolId, classId, subjectId, bimonthly }: TabEReportsProps) {
+export default function TabEReports({ schoolId, classId, subjectId, bimonthly, isReadOnly }: TabEReportsProps) {
   const [activeReport, setActiveReport] = useState<ReportType>('grades');
 
   // Load database metadata

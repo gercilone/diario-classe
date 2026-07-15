@@ -12,6 +12,7 @@ interface TabDAttendanceProps {
   onSelectSchool?: (id: number) => void;
   onSelectClass?: (id: number) => void;
   onSelectSubject?: (id: number) => void;
+  isReadOnly?: boolean;
 }
 
 export default function TabDAttendance({
@@ -21,7 +22,8 @@ export default function TabDAttendance({
   bimonthly,
   onSelectSchool,
   onSelectClass,
-  onSelectSubject
+  onSelectSubject,
+  isReadOnly = false
 }: TabDAttendanceProps) {
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [lessonCount, setLessonCount] = useState(2);
@@ -330,9 +332,10 @@ export default function TabDAttendance({
                   id="attendance-date-select"
                   type="date"
                   required
+                  disabled={isReadOnly}
                   value={selectedDate}
                   onChange={(e) => setSelectedDate(e.target.value)}
-                  className="bg-zinc-950 border border-zinc-800 text-zinc-200 text-xs rounded-xl px-3 py-2.5 w-full focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                  className="bg-zinc-950 border border-zinc-800 text-zinc-200 text-xs rounded-xl px-3 py-2.5 w-full focus:ring-1 focus:ring-blue-500 focus:outline-none disabled:opacity-60"
                 />
               </div>
             </div>
@@ -343,8 +346,9 @@ export default function TabDAttendance({
               <select
                 id="attendance-lesson-count-select"
                 value={lessonCount}
+                disabled={isReadOnly}
                 onChange={(e) => setLessonCount(parseInt(e.target.value))}
-                className="bg-zinc-950 border border-zinc-800 text-zinc-200 text-xs rounded-xl px-3 py-2.5 w-full focus:ring-1 focus:ring-blue-500 focus:outline-none cursor-pointer"
+                className="bg-zinc-950 border border-zinc-800 text-zinc-200 text-xs rounded-xl px-3 py-2.5 w-full focus:ring-1 focus:ring-blue-500 focus:outline-none cursor-pointer disabled:opacity-60 disabled:pointer-events-none"
               >
                 <option value={1}>1 Aula / Hora de Aula</option>
                 <option value={2}>2 Aulas / Horas de Aula (Bloco Comum)</option>
@@ -360,30 +364,37 @@ export default function TabDAttendance({
                 id="attendance-content-textarea"
                 rows={4}
                 required
+                disabled={isReadOnly}
                 placeholder="Ex: Introdução à citologia, organelas citoplasmáticas e suas funções. Exercícios do livro didático pág 34-36."
                 value={content}
                 onChange={(e) => setContent(e.target.value)}
-                className="bg-zinc-950 border border-zinc-800 text-zinc-200 text-xs rounded-xl p-3 w-full focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                className="bg-zinc-950 border border-zinc-800 text-zinc-200 text-xs rounded-xl p-3 w-full focus:ring-1 focus:ring-blue-500 focus:outline-none disabled:opacity-60"
               />
             </div>
           </div>
 
           <div className="flex items-center justify-between pt-3 border-t border-zinc-800">
             <span className="text-[10px] text-zinc-500">
-              {currentLesson ? '✓ Registro existente carregado' : '* Registre a aula antes de fechar'}
+              {isReadOnly 
+                ? 'Visualizando Diário de Aula' 
+                : currentLesson 
+                  ? '✓ Registro existente carregado' 
+                  : '* Registre a aula antes de fechar'}
             </span>
-            <button
-              id="save-lesson-btn"
-              type="submit"
-              className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer ${
-                isSaved 
-                  ? 'bg-emerald-600 text-white' 
-                  : 'bg-blue-600 hover:bg-blue-500 text-white shadow shadow-blue-500/10'
-              }`}
-            >
-              <Save className="w-4 h-4" />
-              {isSaved ? 'Salvo com Sucesso!' : 'Salvar Diário de Aula'}
-            </button>
+            {!isReadOnly && (
+              <button
+                id="save-lesson-btn"
+                type="submit"
+                className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer ${
+                  isSaved 
+                    ? 'bg-emerald-600 text-white' 
+                    : 'bg-blue-600 hover:bg-blue-500 text-white shadow shadow-blue-500/10'
+                }`}
+              >
+                <Save className="w-4 h-4" />
+                {isSaved ? 'Salvo com Sucesso!' : 'Salvar Diário de Aula'}
+              </button>
+            )}
           </div>
         </form>
 
@@ -566,8 +577,9 @@ export default function TabDAttendance({
                                   id={`set-absences-btn-${student.id}-${absIdx}`}
                                   key={absIdx}
                                   type="button"
-                                  onClick={() => handleSetAbsences(student.id!, absIdx)}
-                                  className={`px-2 py-1 rounded text-[10px] font-mono cursor-pointer transition ${btnStyle}`}
+                                  disabled={isReadOnly}
+                                  onClick={() => !isReadOnly && handleSetAbsences(student.id!, absIdx)}
+                                  className={`px-2 py-1 rounded text-[10px] font-mono cursor-pointer transition disabled:pointer-events-none ${btnStyle}`}
                                   title={`${absIdx === 0 ? 'Presença Completa' : `${absIdx} Falta(s)`}`}
                                 >
                                   {absIdx === 0 ? 'P' : `${absIdx}F`}
