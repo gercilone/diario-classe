@@ -1,6 +1,6 @@
-import { initializeApp } from 'firebase/app';
+import { initializeApp, getApps, getApp } from 'firebase/app';
 import {
-  initializeFirestore,
+  getFirestore,
   collection,
   doc,
   getDocs,
@@ -44,8 +44,8 @@ export function getFirestoreInstance() {
       console.warn('Firebase configuration is missing or invalid. Offline mode active.');
       return null;
     }
-    const app = initializeApp(firebaseConfig);
-    firestoreInstance = initializeFirestore(app, {}, firebaseConfig.firestoreDatabaseId || '(default)');
+    const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+    firestoreInstance = getFirestore(app, firebaseConfig.firestoreDatabaseId || '(default)');
     return firestoreInstance;
   } catch (error) {
     console.error('Failed to initialize Firebase / Firestore:', error);
