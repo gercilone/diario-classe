@@ -116,6 +116,8 @@ const TABLES_TO_SYNC = [
 // Pull all diary data from cloud for a specific professor and save to Dexie
 export async function pullTeacherDataFromCloud(username: string, dexieDb: any): Promise<boolean> {
   if (!username) return false;
+  // Disable sync hooks globally so we don't trigger deletion / set actions on Dexie writes
+  (window as any).isCloudSyncDisabled = true;
   try {
     const userLower = username.toLowerCase();
     
@@ -143,6 +145,8 @@ export async function pullTeacherDataFromCloud(username: string, dexieDb: any): 
   } catch (error) {
     console.error(`Error pulling diary data for ${username}:`, error);
     return false;
+  } finally {
+    (window as any).isCloudSyncDisabled = false;
   }
 }
 

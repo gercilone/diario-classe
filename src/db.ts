@@ -70,7 +70,7 @@ export class TeacherDatabase extends Dexie {
 
       table.hook('creating', (primKey, obj) => {
         const activeUser = localStorage.getItem('portal_active_user');
-        if (activeUser && !isCloudSyncDisabled) {
+        if (activeUser && !isCloudSyncDisabled && !(window as any).isCloudSyncDisabled) {
           setTimeout(() => {
             syncSingleRecord(activeUser, tableName, primKey as any, obj, 'set');
           }, 50);
@@ -79,7 +79,7 @@ export class TeacherDatabase extends Dexie {
 
       table.hook('updating', (mods, primKey, obj) => {
         const activeUser = localStorage.getItem('portal_active_user');
-        if (activeUser && !isCloudSyncDisabled) {
+        if (activeUser && !isCloudSyncDisabled && !(window as any).isCloudSyncDisabled) {
           const updatedObj = { ...obj, ...mods };
           setTimeout(() => {
             syncSingleRecord(activeUser, tableName, primKey as any, updatedObj, 'set');
@@ -89,7 +89,7 @@ export class TeacherDatabase extends Dexie {
 
       table.hook('deleting', (primKey) => {
         const activeUser = localStorage.getItem('portal_active_user');
-        if (activeUser && !isCloudSyncDisabled) {
+        if (activeUser && !isCloudSyncDisabled && !(window as any).isCloudSyncDisabled) {
           setTimeout(() => {
             syncSingleRecord(activeUser, tableName, primKey as any, null, 'delete');
           }, 50);

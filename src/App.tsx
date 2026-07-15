@@ -367,6 +367,7 @@ export default function App() {
     
     // 2. Set inspecting mode to true
     localStorage.setItem('portal_is_inspecting_mode', 'true');
+    localStorage.setItem('portal_needs_inspect_pull', 'true');
     
     // 3. Switch active user/db credentials to target teacher
     localStorage.setItem('portal_active_user', teacherUsername);
@@ -710,20 +711,27 @@ export default function App() {
       const activeUser = localStorage.getItem('portal_active_user');
       const role = localStorage.getItem('portal_user_role') || 'teacher';
       const inspecting = localStorage.getItem('portal_is_inspecting_mode') === 'true';
+      const needsInspectPull = localStorage.getItem('portal_needs_inspect_pull') === 'true';
 
       if (activeUser && isAuthenticated && (role === 'teacher' || inspecting)) {
         try {
           const schoolCount = await db.schools.count();
-          if (schoolCount === 0) {
+          const shouldPull = schoolCount === 0 || (inspecting && needsInspectPull);
+
+          if (shouldPull) {
             setIsInitialSyncing(true);
             setSyncStatusMessage(`Sincronizando com a Nuvem... Buscando diário de classe de @${activeUser}...`);
             
             const { pullTeacherDataFromCloud, pushTeacherDataToCloud } = await import('./firebase');
             await pullTeacherDataFromCloud(activeUser, db);
+
+            if (inspecting && needsInspectPull) {
+              localStorage.removeItem('portal_needs_inspect_pull');
+            }
             
-            // If still 0 schools, it's a completely new user. Let's seed default demo data!
+            // If still 0 schools and we are NOT inspecting, it's a completely new user. Let's seed default demo data!
             const newSchoolCount = await db.schools.count();
-            if (newSchoolCount === 0) {
+            if (newSchoolCount === 0 && !inspecting) {
               setSyncStatusMessage('Nenhum dado encontrado na nuvem. Criando diários de demonstração...');
               await seedDatabase();
               // Save the seeded data back to Firestore so it starts synced!
@@ -736,7 +744,9 @@ export default function App() {
         } catch (err) {
           console.error('Error during startup sync:', err);
           setIsInitialSyncing(false);
-          await seedDatabase();
+          if (!inspecting) {
+            await seedDatabase();
+          }
         }
       } else {
         // Fallback for default unauthenticated startup or coordinator view (no local db sync needed unless inspecting)
