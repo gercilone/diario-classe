@@ -31,7 +31,7 @@ export default function TabCGamification({ schoolId, classId, subjectId, bimonth
   // Query scores for this subject and bimonthly
   const scores = useLiveQuery(async () => {
     if (!subjectId) return [];
-    return db.vistoRankingScores.where({ subjectId, bimonthly }).toArray();
+    return db.vistoRankingScores.where('subjectId').equals(subjectId).filter(s => s.bimonthly === bimonthly).toArray();
   }, [subjectId, bimonthly]) || [];
 
   // Automatically select first student if none selected yet

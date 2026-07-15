@@ -44,13 +44,13 @@ export default function TabAGrades({ schoolId, classId, subjectId, bimonthly, is
   // Load grades
   const grades = useLiveQuery(async () => {
     if (!subjectId) return [];
-    return db.bimonthlyGrades.where({ bimonthly, subjectId }).toArray();
+    return db.bimonthlyGrades.where('subjectId').equals(subjectId).filter(g => g.bimonthly === bimonthly).toArray();
   }, [bimonthly, subjectId]) || [];
 
   // Load descriptors
   const descriptor = useLiveQuery(async () => {
     if (!classId || !subjectId) return null;
-    return db.assignmentDescriptions.where({ classId, subjectId, bimonthly }).first();
+    return db.assignmentDescriptions.where('[classId+subjectId+bimonthly]').equals([classId, subjectId, bimonthly]).first();
   }, [classId, subjectId, bimonthly]);
 
   // Load extra/semester grades
@@ -98,7 +98,8 @@ export default function TabAGrades({ schoolId, classId, subjectId, bimonthly, is
   const handleSaveDescriptor = async () => {
     try {
       const existing = await db.assignmentDescriptions
-        .where({ classId, subjectId, bimonthly })
+        .where('[classId+subjectId+bimonthly]')
+        .equals([classId!, subjectId!, bimonthly])
         .first();
 
       if (existing) {
@@ -472,13 +473,6 @@ export default function TabAGrades({ schoolId, classId, subjectId, bimonthly, is
     const record = grades.find((g) => g.studentId === studentId);
     if (!record) return { media: 0, hasGrades: false };
 
-    const t1 = record.t1 ?? 0;
-    const t2 = record.t2 ?? 0;
-    const t3 = record.t3 ?? 0;
-    const t4 = record.t4 ?? 0;
-    const t5 = record.t5 ?? 0;
-    const exam = record.exam ?? 0;
-
     const hasAnyGrade =
       record.t1 !== undefined ||
       record.t2 !== undefined ||
@@ -489,10 +483,59 @@ export default function TabAGrades({ schoolId, classId, subjectId, bimonthly, is
 
     if (!hasAnyGrade) return { media: 0, hasGrades: false };
 
-    // Formula: (T1 + T2 + T3 + T4 + T5 + Prova) / 2
+    const t1 = record.t1 ?? 0;
+    const t2 = record.t2 ?? 0;
+    const t3 = record.t3 ?? 0;
+    const t4 = record.t4 ?? 0;
+    const t5 = record.t5 ?? 0;
+    const exam = record.exam;
+
     const trabalhosSum = t1 + t2 + t3 + t4 + t5;
-    const media = parseFloat(((trabalhosSum + exam) / 2).toFixed(1));
-    return { media, hasGrades: true };
+
+    let media = 0;
+    if (exam !== undefined) {
+      // Se a prova já foi realizada, calcula a média dividindo a soma dos trabalhos e a prova por 2
+      const hasAnyTrab =
+        record.t1 !== undefined ||
+        record.t2 !== undefined ||
+        record.t3 !== undefined ||
+        record.t4 !== undefined ||
+        record.t5 !== undefined;
+      
+      if (!hasAnyTrab) {
+        media = exam; // Se só tem prova e nenhum trabalho, a nota é a própria prova
+      } else {
+        media = (trabalhosSum + exam) / 2;
+      }
+    } else {
+      // Se a prova ainda não foi lançada, a nota do bimestre é a soma dos trabalhos realizados
+      media = trabalhosSum;
+    }
+
+    return { media: parseFloat(media.toFixed(1)), hasGrades: true };
+  };
+
+  // Helper style classes for individual grades (all grades below 7.0 should be red)
+  const getGradeInputClass = (studentId: number, field: 't1' | 't2' | 't3' | 't4' | 't5' | 'exam') => {
+    const valStr = getGradeValue(studentId, field);
+    if (!valStr) return 'text-zinc-100 bg-zinc-800 focus:ring-blue-500';
+    const val = parseFloat(valStr.replace(',', '.'));
+    if (isNaN(val)) return 'text-zinc-100 bg-zinc-800 focus:ring-blue-500';
+    return val < 7.0
+      ? 'text-rose-400 font-bold bg-rose-500/10 border-rose-500/30 focus:ring-rose-500'
+      : 'text-zinc-100 bg-zinc-800 focus:ring-blue-500';
+  };
+
+  const getExtraGradeInputClass = (studentId: number, field: 'recSem1' | 'recSem2' | 'finalExam') => {
+    const valStr = getExtraGradeValue(studentId, field);
+    if (!valStr) return 'text-zinc-100 bg-zinc-800 focus:ring-blue-500';
+    const val = parseFloat(valStr.replace(',', '.'));
+    if (isNaN(val)) return 'text-zinc-100 bg-zinc-800 focus:ring-blue-500';
+    return val < 7.0
+      ? 'text-rose-400 font-bold bg-rose-500/10 border-rose-500/30 focus:ring-rose-500'
+      : field === 'finalExam'
+        ? 'text-red-400 font-bold bg-zinc-800 focus:ring-red-500'
+        : 'text-amber-400 font-bold bg-zinc-800 focus:ring-blue-500';
   };
 
   const t1Label = tempDesc.t1 || 'Trabalho 1';
@@ -539,7 +582,7 @@ export default function TabAGrades({ schoolId, classId, subjectId, bimonthly, is
                 <p className="font-semibold text-zinc-300">Regra de Cálculo:</p>
                 <p>
                   Média = (Soma dos 5 Trabalhos [T1 a T5, que devem somar até 10 pontos] + Nota da Prova [até 10 pontos]) / 2.
-                  Se a Média for menor que 6.0, ela será destacada em vermelho. A recuperação é semestral e pode ser lançada na aba "Recuperações Semestrais & Final".
+                  Se a Média for menor que 7.0, ela será destacada em vermelho. A recuperação é semestral e pode ser lançada na aba "Recuperações Semestrais & Final".
                 </p>
               </div>
             </div>
@@ -652,7 +695,7 @@ export default function TabAGrades({ schoolId, classId, subjectId, bimonthly, is
                 ) : (
                   students.map((student, idx) => {
                     const { media, hasGrades } = calculateMedia(student.id!);
-                    const isBelowAverage = hasGrades && media < 6.0;
+                    const isBelowAverage = hasGrades && media < 7.0;
 
                     return (
                       <tr key={student.id} className="hover:bg-white/5 transition-colors group">
@@ -670,7 +713,7 @@ export default function TabAGrades({ schoolId, classId, subjectId, bimonthly, is
                             onKeyDown={(e) => handleKeyDown(e, student.id!, 't1')}
                             placeholder="-"
                             tabIndex={100 + idx}
-                            className="w-12 text-center bg-zinc-800 disabled:opacity-75 disabled:text-zinc-400 border-none rounded py-1 px-2 text-zinc-100 font-mono text-xs focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                            className={`w-12 text-center disabled:opacity-75 disabled:text-zinc-400 border-none rounded py-1 px-2 font-mono text-xs focus:ring-1 focus:outline-none ${getGradeInputClass(student.id!, 't1')}`}
                           />
                         </td>
                         {/* T2 */}
@@ -684,7 +727,7 @@ export default function TabAGrades({ schoolId, classId, subjectId, bimonthly, is
                             onKeyDown={(e) => handleKeyDown(e, student.id!, 't2')}
                             placeholder="-"
                             tabIndex={200 + idx}
-                            className="w-12 text-center bg-zinc-800 disabled:opacity-75 disabled:text-zinc-400 border-none rounded py-1 px-2 text-zinc-100 font-mono text-xs focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                            className={`w-12 text-center disabled:opacity-75 disabled:text-zinc-400 border-none rounded py-1 px-2 font-mono text-xs focus:ring-1 focus:outline-none ${getGradeInputClass(student.id!, 't2')}`}
                           />
                         </td>
                         {/* T3 */}
@@ -698,7 +741,7 @@ export default function TabAGrades({ schoolId, classId, subjectId, bimonthly, is
                             onKeyDown={(e) => handleKeyDown(e, student.id!, 't3')}
                             placeholder="-"
                             tabIndex={300 + idx}
-                            className="w-12 text-center bg-zinc-800 disabled:opacity-75 disabled:text-zinc-400 border-none rounded py-1 px-2 text-zinc-100 font-mono text-xs focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                            className={`w-12 text-center disabled:opacity-75 disabled:text-zinc-400 border-none rounded py-1 px-2 font-mono text-xs focus:ring-1 focus:outline-none ${getGradeInputClass(student.id!, 't3')}`}
                           />
                         </td>
                         {/* T4 */}
@@ -712,7 +755,7 @@ export default function TabAGrades({ schoolId, classId, subjectId, bimonthly, is
                             onKeyDown={(e) => handleKeyDown(e, student.id!, 't4')}
                             placeholder="-"
                             tabIndex={400 + idx}
-                            className="w-12 text-center bg-zinc-800 disabled:opacity-75 disabled:text-zinc-400 border-none rounded py-1 px-2 text-zinc-100 font-mono text-xs focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                            className={`w-12 text-center disabled:opacity-75 disabled:text-zinc-400 border-none rounded py-1 px-2 font-mono text-xs focus:ring-1 focus:outline-none ${getGradeInputClass(student.id!, 't4')}`}
                           />
                         </td>
                         {/* T5 */}
@@ -726,7 +769,7 @@ export default function TabAGrades({ schoolId, classId, subjectId, bimonthly, is
                             onKeyDown={(e) => handleKeyDown(e, student.id!, 't5')}
                             placeholder="-"
                             tabIndex={500 + idx}
-                            className="w-12 text-center bg-zinc-800 disabled:opacity-75 disabled:text-zinc-400 border-none rounded py-1 px-2 text-zinc-100 font-mono text-xs focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                            className={`w-12 text-center disabled:opacity-75 disabled:text-zinc-400 border-none rounded py-1 px-2 font-mono text-xs focus:ring-1 focus:outline-none ${getGradeInputClass(student.id!, 't5')}`}
                           />
                         </td>
                         {/* Exam */}
@@ -740,7 +783,7 @@ export default function TabAGrades({ schoolId, classId, subjectId, bimonthly, is
                             onKeyDown={(e) => handleKeyDown(e, student.id!, 'exam')}
                             placeholder="-"
                             tabIndex={600 + idx}
-                            className="w-12 text-center bg-zinc-800 disabled:opacity-75 disabled:text-zinc-400 border-none rounded py-1 px-2 text-zinc-100 font-mono text-xs focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                            className={`w-12 text-center disabled:opacity-75 disabled:text-zinc-400 border-none rounded py-1 px-2 font-mono text-xs focus:ring-1 focus:outline-none ${getGradeInputClass(student.id!, 'exam')}`}
                           />
                         </td>
                         
@@ -806,7 +849,7 @@ export default function TabAGrades({ schoolId, classId, subjectId, bimonthly, is
                             onKeyDown={(e) => handleKeyDown(e, student.id!, 'recSem1')}
                             placeholder="-"
                             tabIndex={1000 + idx}
-                            className="w-24 text-center bg-zinc-800 disabled:opacity-75 disabled:text-zinc-500 border-none rounded py-1 px-2 text-amber-400 font-mono text-xs focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                            className={`w-24 text-center disabled:opacity-75 disabled:text-zinc-500 border-none rounded py-1 px-2 font-mono text-xs focus:ring-1 focus:outline-none ${getExtraGradeInputClass(student.id!, 'recSem1')}`}
                           />
                         </td>
 
@@ -821,7 +864,7 @@ export default function TabAGrades({ schoolId, classId, subjectId, bimonthly, is
                             onKeyDown={(e) => handleKeyDown(e, student.id!, 'recSem2')}
                             placeholder="-"
                             tabIndex={1100 + idx}
-                            className="w-24 text-center bg-zinc-800 disabled:opacity-75 disabled:text-zinc-500 border-none rounded py-1 px-2 text-amber-400 font-mono text-xs focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                            className={`w-24 text-center disabled:opacity-75 disabled:text-zinc-500 border-none rounded py-1 px-2 font-mono text-xs focus:ring-1 focus:outline-none ${getExtraGradeInputClass(student.id!, 'recSem2')}`}
                           />
                         </td>
 
@@ -836,7 +879,7 @@ export default function TabAGrades({ schoolId, classId, subjectId, bimonthly, is
                             onKeyDown={(e) => handleKeyDown(e, student.id!, 'finalExam')}
                             placeholder="-"
                             tabIndex={1200 + idx}
-                            className="w-24 text-center bg-zinc-800 disabled:opacity-75 disabled:text-zinc-500 border-none rounded py-1 px-2 text-red-400 font-mono font-bold text-xs focus:ring-1 focus:ring-red-500 focus:outline-none"
+                            className={`w-24 text-center disabled:opacity-75 disabled:text-zinc-500 border-none rounded py-1 px-2 font-mono font-bold text-xs focus:ring-1 focus:outline-none ${getExtraGradeInputClass(student.id!, 'finalExam')}`}
                           />
                         </td>
                       </tr>

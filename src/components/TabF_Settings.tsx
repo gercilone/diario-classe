@@ -409,7 +409,9 @@ export default function TabFSettings({ teacherName, setTeacherName, onSecuritySa
     if (!selectedClassIdForWorkload || !selectedSubjectIdForWorkload) return;
     try {
       const existing = await db.subjectWorkloads
-        .where({ classId: selectedClassIdForWorkload, subjectId: selectedSubjectIdForWorkload })
+        .where('classId')
+        .equals(selectedClassIdForWorkload)
+        .filter(w => w.subjectId === selectedSubjectIdForWorkload)
         .first();
 
       if (existing) {

@@ -31,19 +31,19 @@ export default function TabEReports({ schoolId, classId, subjectId, bimonthly, i
   // Load bimonthly grades
   const grades = useLiveQuery(async () => {
     if (!subjectId) return [];
-    return db.bimonthlyGrades.where({ bimonthly, subjectId }).toArray();
+    return db.bimonthlyGrades.where('subjectId').equals(subjectId).filter(g => g.bimonthly === bimonthly).toArray();
   }, [bimonthly, subjectId]) || [];
 
   // Load descriptor labels
   const descriptor = useLiveQuery(async () => {
     if (!classId || !subjectId) return null;
-    return db.assignmentDescriptions.where({ classId, subjectId, bimonthly }).first();
+    return db.assignmentDescriptions.where('[classId+subjectId+bimonthly]').equals([classId, subjectId, bimonthly]).first();
   }, [classId, subjectId, bimonthly]);
 
   // Load seen columns & vistos
   const vistoColumns = useLiveQuery(async () => {
     if (!classId || !subjectId) return [];
-    return db.vistoColumns.where({ classId, subjectId, bimonthly }).toArray();
+    return db.vistoColumns.where('classId').equals(classId).filter(c => c.subjectId === subjectId && c.bimonthly === bimonthly).toArray();
   }, [classId, subjectId, bimonthly]) || [];
 
   const studentVistos = useLiveQuery(async () => {
@@ -54,18 +54,18 @@ export default function TabEReports({ schoolId, classId, subjectId, bimonthly, i
   // Load behavior ranking scores
   const behaviorScores = useLiveQuery(async () => {
     if (!subjectId) return [];
-    return db.vistoRankingScores.where({ subjectId, bimonthly }).toArray();
+    return db.vistoRankingScores.where('subjectId').equals(subjectId).filter(s => s.bimonthly === bimonthly).toArray();
   }, [subjectId, bimonthly]) || [];
 
   // Load attendance lessons and absences
   const lessons = useLiveQuery(async () => {
     if (!classId || !subjectId) return [];
-    return db.lessons.where({ classId, subjectId, bimonthly }).toArray();
+    return db.lessons.where('classId').equals(classId).filter(l => l.subjectId === subjectId && l.bimonthly === bimonthly).toArray();
   }, [classId, subjectId, bimonthly]) || [];
 
   const attendance = useLiveQuery(async () => {
     if (!subjectId) return [];
-    return db.attendance.where({ subjectId, bimonthly }).toArray();
+    return db.attendance.where('subjectId').equals(subjectId).filter(a => a.bimonthly === bimonthly).toArray();
   }, [subjectId, bimonthly]) || [];
 
   if (!schoolId || !classId || !subjectId) {
@@ -109,7 +109,20 @@ export default function TabEReports({ schoolId, classId, subjectId, bimonthly, i
     if (!hasAny) return { t1: '-', t2: '-', t3: '-', t4: '-', t5: '-', exam: '-', average: '-' };
 
     const worksSum = (t1 ?? 0) + (t2 ?? 0) + (t3 ?? 0) + (t4 ?? 0) + (t5 ?? 0);
-    const average = parseFloat(((worksSum + (exam ?? 0)) / 2).toFixed(1));
+    
+    let averageVal = 0;
+    if (exam !== undefined) {
+      const hasAnyTrab = t1 !== undefined || t2 !== undefined || t3 !== undefined || t4 !== undefined || t5 !== undefined;
+      if (!hasAnyTrab) {
+        averageVal = exam;
+      } else {
+        averageVal = (worksSum + exam) / 2;
+      }
+    } else {
+      averageVal = worksSum;
+    }
+
+    const average = parseFloat(averageVal.toFixed(1));
 
     return {
       t1: t1 !== undefined ? t1.toFixed(1) : '-',
@@ -120,6 +133,13 @@ export default function TabEReports({ schoolId, classId, subjectId, bimonthly, i
       exam: exam !== undefined ? exam.toFixed(1) : '-',
       average: average.toFixed(1),
     };
+  };
+
+  const getReportGradeClass = (valStr: string) => {
+    if (valStr === '-') return '';
+    const val = parseFloat(valStr.replace(',', '.'));
+    if (isNaN(val)) return '';
+    return val < 7.0 ? 'text-rose-400 font-bold' : '';
   };
 
   // Vistos calculation
@@ -408,18 +428,18 @@ export default function TabEReports({ schoolId, classId, subjectId, bimonthly, i
                 <tbody className="divide-y divide-zinc-800/60 text-zinc-300 print:text-black">
                   {students.map((st) => {
                     const row = getStudentGradesRow(st.id!);
-                    const isBelow = row.average !== '-' && parseFloat(row.average) < 6.0;
+                    const isBelow = row.average !== '-' && parseFloat(row.average) < 7.0;
 
                     return (
                       <tr key={st.id} className="hover:bg-white/5">
                         <td className="py-2 px-2 text-center font-mono">{st.rollNumber}</td>
                         <td className="py-2 px-3 font-semibold text-zinc-200 print:text-black">{st.name}</td>
-                        <td className="py-2 px-2 text-center font-mono">{row.t1}</td>
-                        <td className="py-2 px-2 text-center font-mono">{row.t2}</td>
-                        <td className="py-2 px-2 text-center font-mono">{row.t3}</td>
-                        <td className="py-2 px-2 text-center font-mono">{row.t4}</td>
-                        <td className="py-2 px-2 text-center font-mono">{row.t5}</td>
-                        <td className="py-2 px-2 text-center font-mono">{row.exam}</td>
+                        <td className={`py-2 px-2 text-center font-mono ${getReportGradeClass(row.t1)}`}>{row.t1}</td>
+                        <td className={`py-2 px-2 text-center font-mono ${getReportGradeClass(row.t2)}`}>{row.t2}</td>
+                        <td className={`py-2 px-2 text-center font-mono ${getReportGradeClass(row.t3)}`}>{row.t3}</td>
+                        <td className={`py-2 px-2 text-center font-mono ${getReportGradeClass(row.t4)}`}>{row.t4}</td>
+                        <td className={`py-2 px-2 text-center font-mono ${getReportGradeClass(row.t5)}`}>{row.t5}</td>
+                        <td className={`py-2 px-2 text-center font-mono ${getReportGradeClass(row.exam)}`}>{row.exam}</td>
                         <td className={`py-2 px-3 text-center font-mono font-extrabold bg-blue-950/10 text-blue-400 print:text-black ${isBelow ? 'text-rose-400' : ''}`}>
                           {row.average}
                         </td>
@@ -431,7 +451,7 @@ export default function TabEReports({ schoolId, classId, subjectId, bimonthly, i
             </div>
             <div className="text-[10px] text-zinc-500 font-medium pt-3 leading-relaxed">
               <p>* Descritores Bimestrais cadastrados: T1 = {t1Label}; T2 = {t2Label}; T3 = {t3Label}; T4 = {t4Label}; T5 = {t5Label}</p>
-              <p>* Nota de corte para aprovação do bimestre: 6.0 (A recuperação é realizada ao fim de cada semestre)</p>
+              <p>* Nota de corte para aprovação do bimestre: 7.0 (A recuperação é realizada ao fim de cada semestre)</p>
             </div>
           </div>
         )}

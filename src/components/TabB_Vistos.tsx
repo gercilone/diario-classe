@@ -26,7 +26,7 @@ export default function TabBVistos({ schoolId, classId, subjectId, bimonthly, is
   // Query visto columns
   const columns = useLiveQuery(async () => {
     if (!classId || !subjectId) return [];
-    return db.vistoColumns.where({ classId, subjectId, bimonthly }).toArray();
+    return db.vistoColumns.where('classId').equals(classId).filter(c => c.subjectId === subjectId && c.bimonthly === bimonthly).toArray();
   }, [classId, subjectId, bimonthly]) || [];
 
   // Query student vistos

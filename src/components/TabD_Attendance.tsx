@@ -61,25 +61,25 @@ export default function TabDAttendance({
   // Query lessons for this bimonthly, class, subject to calculate total workload given
   const allLessons = useLiveQuery(async () => {
     if (!classId || !subjectId) return [];
-    return db.lessons.where({ classId, subjectId, bimonthly }).toArray();
+    return db.lessons.where('classId').equals(classId).filter(l => l.subjectId === subjectId && l.bimonthly === bimonthly).toArray();
   }, [classId, subjectId, bimonthly]) || [];
 
   // Query lesson on selected date
   const currentLesson = useLiveQuery(async () => {
     if (!classId || !subjectId || !selectedDate) return undefined;
-    return db.lessons.where({ classId, subjectId, date: selectedDate }).first();
+    return db.lessons.where('classId').equals(classId).filter(l => l.subjectId === subjectId && l.date === selectedDate).first();
   }, [classId, subjectId, selectedDate]);
 
   // Query all attendance for this subject and bimonthly to compute cumulative statistics
   const bimonthlyAttendance = useLiveQuery(async () => {
     if (!subjectId) return [];
-    return db.attendance.where({ subjectId, bimonthly }).toArray();
+    return db.attendance.where('subjectId').equals(subjectId).filter(a => a.bimonthly === bimonthly).toArray();
   }, [subjectId, bimonthly]) || [];
 
   // Query attendance records for current selected date
   const dailyAttendance = useLiveQuery(async () => {
     if (!subjectId || !selectedDate) return [];
-    return db.attendance.where({ subjectId, date: selectedDate }).toArray();
+    return db.attendance.where('subjectId').equals(subjectId).filter(a => a.date === selectedDate).toArray();
   }, [subjectId, selectedDate]) || [];
 
   // Sync state with current lesson when selected date or loaded lesson changes
