@@ -227,8 +227,11 @@ export async function syncCoordinatorsListInCloud(): Promise<CoordinatorAccount[
       cloudList.push(doc.data() as CoordinatorAccount);
     });
 
-    // If no coordinator exists in the cloud, seed the default coordinator
-    if (cloudList.length === 0) {
+    // Ensure both default coordinator AND master admin are present in the cloud list
+    const hasCoordenador = cloudList.some(c => c.username.toLowerCase() === 'coordenador');
+    const hasAdmin = cloudList.some(c => c.username.toLowerCase() === 'admin');
+
+    if (!hasCoordenador) {
       const defaultCoord: CoordinatorAccount = {
         username: 'coordenador',
         password: '123',
@@ -236,6 +239,16 @@ export async function syncCoordinatorsListInCloud(): Promise<CoordinatorAccount[
       };
       await saveCoordinatorToCloud(defaultCoord);
       cloudList.push(defaultCoord);
+    }
+
+    if (!hasAdmin) {
+      const adminCoord: CoordinatorAccount = {
+        username: 'admin',
+        password: 'admin',
+        name: 'Administrador Geral'
+      };
+      await saveCoordinatorToCloud(adminCoord);
+      cloudList.push(adminCoord);
     }
 
     localStorage.setItem('portal_coordinators_list', JSON.stringify(cloudList));
@@ -247,7 +260,10 @@ export async function syncCoordinatorsListInCloud(): Promise<CoordinatorAccount[
       return JSON.parse(localStr);
     }
     // Final fallback
-    return [{ username: 'coordenador', password: '123', name: 'Coordenador Geral' }];
+    return [
+      { username: 'coordenador', password: '123', name: 'Coordenador Geral' },
+      { username: 'admin', password: 'admin', name: 'Administrador Geral' }
+    ];
   }
 }
 

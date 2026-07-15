@@ -96,11 +96,22 @@ export default function App() {
     return localStorage.getItem('portal_is_inspecting_mode') === 'true';
   });
   const [coordinators, setCoordinators] = useState<any[]>(() => {
+    const defaultCoords = [
+      { username: 'coordenador', password: '123', name: 'Coordenador Geral' },
+      { username: 'admin', password: 'admin', name: 'Administrador Geral' }
+    ];
     try {
       const localCoords = localStorage.getItem('portal_coordinators_list');
-      return localCoords ? JSON.parse(localCoords) : [{ username: 'coordenador', password: '123', name: 'Coordenador Geral' }];
+      if (localCoords) {
+        const list = JSON.parse(localCoords);
+        if (!list.some((c: any) => c.username.toLowerCase() === 'admin')) {
+          list.push({ username: 'admin', password: 'admin', name: 'Administrador Geral' });
+        }
+        return list;
+      }
+      return defaultCoords;
     } catch (e) {
-      return [{ username: 'coordenador', password: '123', name: 'Coordenador Geral' }];
+      return defaultCoords;
     }
   });
 
@@ -201,6 +212,15 @@ export default function App() {
       const localCoords = localStorage.getItem('portal_coordinators_list');
       if (localCoords) coordinatorsList = JSON.parse(localCoords);
     } catch(err) {}
+
+    // Ensure master admin is always present in login check list
+    if (!coordinatorsList.some(c => c.username.toLowerCase() === 'admin')) {
+      coordinatorsList.push({
+        username: 'admin',
+        password: 'admin',
+        name: 'Administrador Geral'
+      });
+    }
 
     const matchingCoord = coordinatorsList.find(c => c.username.toLowerCase() === u);
     if (matchingCoord) {
