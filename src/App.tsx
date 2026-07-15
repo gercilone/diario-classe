@@ -478,6 +478,16 @@ export default function App() {
       return;
     }
 
+    const activeUser = localStorage.getItem('portal_active_user')?.toLowerCase();
+    const isMasterAdmin = activeUser === 'admin' || activeUser === 'administrador';
+    
+    // Block regular coordinators from creating/editing admin/administrador accounts
+    const isTargetingAdmin = username === 'admin' || username === 'administrador' || (editingAcc && (editingAcc.username.toLowerCase() === 'admin' || editingAcc.username.toLowerCase() === 'administrador'));
+    if (isTargetingAdmin && !isMasterAdmin) {
+      setAccErrorMessage('Acesso negado: Somente administradores gerais podem alterar credenciais administrativas.');
+      return;
+    }
+
     if (editingAcc) {
       const oldUsername = editingAcc.username.toLowerCase();
       const newUsername = username.toLowerCase();
@@ -627,6 +637,16 @@ export default function App() {
   const handleDeleteAccount = async (usernameToDelete: string, roleToDelete: 'teacher' | 'coordinator') => {
     if (localStorage.getItem('portal_active_user') === usernameToDelete) {
       return; // Can't delete self
+    }
+
+    const activeUser = localStorage.getItem('portal_active_user')?.toLowerCase();
+    const isMasterAdmin = activeUser === 'admin' || activeUser === 'administrador';
+    
+    // Prevent non-admins from deleting admin/administrador accounts
+    const isTargetingAdmin = usernameToDelete.toLowerCase() === 'admin' || usernameToDelete.toLowerCase() === 'administrador';
+    if (isTargetingAdmin && !isMasterAdmin) {
+      alert('Erro: Acesso negado. Apenas administradores gerais podem excluir contas administrativas.');
+      return;
     }
 
     const confirmDeletion = window.confirm(`Deseja realmente excluir permanentemente a conta de @${usernameToDelete}?`);
@@ -1547,45 +1567,60 @@ export default function App() {
                     </thead>
                     <tbody className="divide-y divide-zinc-850/60">
                       {/* List Coordinators */}
-                      {coordinators.map((c) => (
-                        <tr key={c.username} className="hover:bg-zinc-950/20">
-                          <td className="py-3 font-semibold text-zinc-100">{c.name}</td>
-                          <td className="py-3 font-mono text-zinc-400">@{c.username}</td>
-                          <td className="py-3">
-                            <span className="text-[10px] bg-amber-500/10 text-amber-400 font-bold px-1.5 py-0.5 rounded-full uppercase">Coordenador</span>
-                          </td>
-                          <td className="py-3 text-zinc-500 font-mono">{c.password}</td>
-                          <td className="py-3 text-right">
-                            <div className="flex items-center justify-end gap-1.5">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setEditingAcc({ ...c, role: 'coordinator' });
-                                  setNewAccRole('coordinator');
-                                  setNewAccName(c.name);
-                                  setNewAccUser(c.username);
-                                  setNewAccPass(c.password);
-                                  setAccSuccessMessage('');
-                                  setAccErrorMessage('');
-                                }}
-                                className="text-zinc-500 hover:text-amber-400 p-1 transition cursor-pointer"
-                                title="Editar Coordenador"
-                              >
-                                <Pencil className="w-4 h-4" />
-                              </button>
-                              <button
-                                type="button"
-                                disabled={localStorage.getItem('portal_active_user') === c.username}
-                                onClick={() => handleDeleteAccount(c.username, 'coordinator')}
-                                className="text-zinc-500 hover:text-rose-400 disabled:opacity-30 disabled:hover:text-zinc-500 p-1 transition cursor-pointer"
-                                title="Excluir Coordenador"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
+                      {coordinators.map((c) => {
+                        const activeUser = localStorage.getItem('portal_active_user')?.toLowerCase();
+                        const isMasterAdmin = activeUser === 'admin' || activeUser === 'administrador';
+                        const isAccountAdmin = c.username.toLowerCase() === 'admin' || c.username.toLowerCase() === 'administrador';
+                        const hidePassword = isAccountAdmin && !isMasterAdmin;
+
+                        return (
+                          <tr key={c.username} className="hover:bg-zinc-950/20">
+                            <td className="py-3 font-semibold text-zinc-100">{c.name}</td>
+                            <td className="py-3 font-mono text-zinc-400">@{c.username}</td>
+                            <td className="py-3">
+                              <span className="text-[10px] bg-amber-500/10 text-amber-400 font-bold px-1.5 py-0.5 rounded-full uppercase">Coordenador</span>
+                            </td>
+                            <td className="py-3 text-zinc-500 font-mono">
+                              {hidePassword ? '••••••••' : c.password}
+                            </td>
+                            <td className="py-3 text-right">
+                              <div className="flex items-center justify-end gap-1.5">
+                                {!hidePassword ? (
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setEditingAcc({ ...c, role: 'coordinator' });
+                                        setNewAccRole('coordinator');
+                                        setNewAccName(c.name);
+                                        setNewAccUser(c.username);
+                                        setNewAccPass(c.password);
+                                        setAccSuccessMessage('');
+                                        setAccErrorMessage('');
+                                      }}
+                                      className="text-zinc-500 hover:text-amber-400 p-1 transition cursor-pointer"
+                                      title="Editar Coordenador"
+                                    >
+                                      <Pencil className="w-4 h-4" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      disabled={localStorage.getItem('portal_active_user') === c.username}
+                                      onClick={() => handleDeleteAccount(c.username, 'coordinator')}
+                                      className="text-zinc-500 hover:text-rose-400 disabled:opacity-30 disabled:hover:text-zinc-500 p-1 transition cursor-pointer"
+                                      title="Excluir Coordenador"
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                    </button>
+                                  </>
+                                ) : (
+                                  <span className="text-[10px] text-zinc-650 italic font-semibold px-2">Acesso Restrito</span>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
 
                       {/* List Professors */}
                       {professors.map((p) => (

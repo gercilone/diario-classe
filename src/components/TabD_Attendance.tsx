@@ -2,7 +2,7 @@ import { useState, useEffect, FormEvent } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db';
 import { Student, Lesson, Attendance } from '../types';
-import { BookOpen, Calendar, Save, CheckCircle2, UserX, Info, AlertTriangle, ShieldAlert, Sparkles, Clock, ArrowRight, CalendarDays } from 'lucide-react';
+import { BookOpen, Calendar, Save, CheckCircle2, UserX, Info, AlertTriangle, ShieldAlert, Sparkles, Clock, ArrowRight, CalendarDays, Trash2, Pencil } from 'lucide-react';
 
 interface TabDAttendanceProps {
   schoolId: number | undefined;
@@ -29,6 +29,17 @@ export default function TabDAttendance({
   const [lessonCount, setLessonCount] = useState(2);
   const [content, setContent] = useState('');
   const [isSaved, setIsSaved] = useState(false);
+  const [editingLessonId, setEditingLessonId] = useState<number | undefined>(undefined);
+
+  // Load current workload for expected lessons progress
+  const currentWorkload = useLiveQuery(async () => {
+    if (!classId || !subjectId) return undefined;
+    const targetClassId = Number(classId);
+    const targetSubjectId = Number(subjectId);
+    return db.subjectWorkloads
+      .filter(w => Number(w.classId) === targetClassId && Number(w.subjectId) === targetSubjectId)
+      .first();
+  }, [classId, subjectId]);
 
   // Query schedules, schools, classes, and subjects to match names
   const weeklySchedules = useLiveQuery(() => db.weeklySchedule.toArray()) || [];
@@ -100,6 +111,10 @@ export default function TabDAttendance({
 
   // Sync state with current lesson when selected date or loaded lesson changes
   useEffect(() => {
+    if (editingLessonId !== undefined) {
+      // In edit mode, don't overwrite user's edits with automatic date-sync
+      return;
+    }
     if (currentLesson) {
       setLessonCount(currentLesson.lessonCount);
       setContent(currentLesson.content);
@@ -109,7 +124,7 @@ export default function TabDAttendance({
       setContent('');
       setIsSaved(false);
     }
-  }, [currentLesson, selectedDate]);
+  }, [currentLesson, selectedDate, editingLessonId]);
 
   if (!schoolId || !classId || !subjectId) {
     const todayDayNum = getTodayDayOfWeek();
@@ -277,18 +292,25 @@ export default function TabDAttendance({
   const handleSaveLesson = async (e: FormEvent) => {
     e.preventDefault();
     try {
-      if (currentLesson) {
+      if (editingLessonId !== undefined) {
+        await db.lessons.update(editingLessonId, {
+          date: selectedDate,
+          lessonCount: Number(lessonCount),
+          content: content.trim(),
+        });
+        setEditingLessonId(undefined);
+      } else if (currentLesson) {
         await db.lessons.update(currentLesson.id!, {
-          lessonCount,
+          lessonCount: Number(lessonCount),
           content: content.trim(),
         });
       } else {
         await db.lessons.add({
-          classId,
-          subjectId,
+          classId: Number(classId),
+          subjectId: Number(subjectId),
           date: selectedDate,
-          bimonthly,
-          lessonCount,
+          bimonthly: Number(bimonthly),
+          lessonCount: Number(lessonCount),
           content: content.trim(),
         });
       }
@@ -296,6 +318,39 @@ export default function TabDAttendance({
       setTimeout(() => setIsSaved(false), 2000);
     } catch (err) {
       console.error('Error saving lesson:', err);
+    }
+  };
+
+  const handleEditLesson = (lesson: Lesson) => {
+    setEditingLessonId(lesson.id);
+    setSelectedDate(lesson.date);
+    setLessonCount(lesson.lessonCount);
+    setContent(lesson.content);
+    setIsSaved(false);
+  };
+
+  const handleDeleteLesson = async (lessonId: number, lessonDate: string) => {
+    if (!window.confirm(`Tem certeza que deseja excluir a aula ministrada do dia ${lessonDate.split('-').reverse().join('/')}?`)) {
+      return;
+    }
+    try {
+      await db.lessons.delete(lessonId);
+      
+      // Delete associated attendance records for this subject and date to keep data clean
+      const associatedAttendance = await db.attendance
+        .filter(a => Number(a.subjectId) === Number(subjectId) && a.date === lessonDate)
+        .toArray();
+      for (const att of associatedAttendance) {
+        await db.attendance.delete(att.id!);
+      }
+
+      if (editingLessonId === lessonId) {
+        setEditingLessonId(undefined);
+        setLessonCount(2);
+        setContent('');
+      }
+    } catch (err) {
+      console.error('Error deleting lesson:', err);
     }
   };
 
@@ -327,109 +382,15 @@ export default function TabDAttendance({
   return (
     <div id="attendance-tab-content" className="grid grid-cols-1 lg:grid-cols-12 gap-6">
       
-      {/* LEFT COLUMN: Lesson Registration Form (5 cols) */}
+      {/* LEFT COLUMN: Agenda first, Form second, Stats & Contents third (5 cols) */}
       <div className="lg:col-span-5 space-y-4">
-        <form
-          id="lesson-log-form"
-          onSubmit={handleSaveLesson}
-          className="bg-zinc-900 border border-zinc-800 p-5 rounded-2xl space-y-4 shadow-xl"
-        >
-          <div className="flex items-center gap-2 border-b border-zinc-800 pb-3">
-            <BookOpen className="w-5 h-5 text-blue-400" />
-            <h3 className="text-white font-bold text-base">Registro de Aula Ministrada</h3>
-          </div>
-
-          <div className="space-y-3">
-            {/* Date Selection */}
-            <div className="space-y-1">
-              <label className="text-xs font-semibold text-zinc-400 block">Data da Aula</label>
-              <div className="relative">
-                <input
-                  id="attendance-date-select"
-                  type="date"
-                  required
-                  disabled={isReadOnly}
-                  value={selectedDate}
-                  onChange={(e) => setSelectedDate(e.target.value)}
-                  className="bg-zinc-950 border border-zinc-800 text-zinc-200 text-xs rounded-xl px-3 py-2.5 w-full focus:ring-1 focus:ring-blue-500 focus:outline-none disabled:opacity-60"
-                />
-              </div>
-            </div>
-
-            {/* Lesson Count */}
-            <div className="space-y-1">
-              <label className="text-xs font-semibold text-zinc-400 block">Quantidade de Aulas / Horas</label>
-              <select
-                id="attendance-lesson-count-select"
-                value={lessonCount}
-                disabled={isReadOnly}
-                onChange={(e) => setLessonCount(parseInt(e.target.value))}
-                className="bg-zinc-950 border border-zinc-800 text-zinc-200 text-xs rounded-xl px-3 py-2.5 w-full focus:ring-1 focus:ring-blue-500 focus:outline-none cursor-pointer disabled:opacity-60 disabled:pointer-events-none"
-              >
-                <option value={1}>1 Aula / Hora de Aula</option>
-                <option value={2}>2 Aulas / Horas de Aula (Bloco Comum)</option>
-                <option value={3}>3 Aulas / Horas de Aula</option>
-                <option value={4}>4 Aulas / Horas de Aula</option>
-              </select>
-            </div>
-
-            {/* Lesson Content Description */}
-            <div className="space-y-1">
-              <label className="text-xs font-semibold text-zinc-400 block">Conteúdo Ministrado</label>
-              <textarea
-                id="attendance-content-textarea"
-                rows={4}
-                required
-                disabled={isReadOnly}
-                placeholder="Ex: Introdução à citologia, organelas citoplasmáticas e suas funções. Exercícios do livro didático pág 34-36."
-                value={content}
-                onChange={(e) => setContent(e.target.value)}
-                className="bg-zinc-950 border border-zinc-800 text-zinc-200 text-xs rounded-xl p-3 w-full focus:ring-1 focus:ring-blue-500 focus:outline-none disabled:opacity-60"
-              />
-            </div>
-          </div>
-
-          <div className="flex items-center justify-between pt-3 border-t border-zinc-800">
-            <span className="text-[10px] text-zinc-500">
-              {isReadOnly 
-                ? 'Visualizando Diário de Aula' 
-                : currentLesson 
-                  ? '✓ Registro existente carregado' 
-                  : '* Registre a aula antes de fechar'}
-            </span>
-            {!isReadOnly && (
-              <button
-                id="save-lesson-btn"
-                type="submit"
-                className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer ${
-                  isSaved 
-                    ? 'bg-emerald-600 text-white' 
-                    : 'bg-blue-600 hover:bg-blue-500 text-white shadow shadow-blue-500/10'
-                }`}
-              >
-                <Save className="w-4 h-4" />
-                {isSaved ? 'Salvo com Sucesso!' : 'Salvar Diário de Aula'}
-              </button>
-            )}
-          </div>
-        </form>
-
-        {/* Workload Stats Card */}
-        <div className="bg-zinc-900/50 border border-zinc-800 p-4 rounded-xl flex items-start gap-2.5">
-          <Info className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
-          <div className="text-xs text-zinc-400 space-y-1">
-            <p className="font-semibold text-zinc-300">Estatísticas do Bimestre:</p>
-            <p>Aulas Registradas até o momento: <strong className="text-blue-400">{totalLessonsGiven} horas-aula</strong>.</p>
-            <p className="text-[11px] text-zinc-500">Cada falta atribuída deduz presença proporcional no cálculo da frequência acumulada.</p>
-          </div>
-        </div>
-
-        {/* Weekly Schedule Shortcuts card inside active view */}
+        
+        {/* 1. Weekly Schedule Shortcuts card / Agenda do Dia */}
         <div className="bg-zinc-900 border border-zinc-800 p-4 rounded-2xl space-y-3 shadow-md">
           <div className="flex items-center justify-between border-b border-zinc-800 pb-2">
             <h4 className="text-xs font-bold text-zinc-300 flex items-center gap-1.5 uppercase tracking-wider">
               <CalendarDays className="w-3.5 h-3.5 text-blue-400" />
-              Lembretes / Agenda do Dia
+              COBRATES / Agenda do Dia
             </h4>
             <span className="text-[9px] font-bold text-zinc-500 font-mono">
               Hoje ({getDayLabel(getTodayDayOfWeek()).split('-')[0]})
@@ -523,6 +484,214 @@ export default function TabDAttendance({
             </div>
           )}
         </div>
+
+        {/* 2. Lesson Registration Form */}
+        <form
+          id="lesson-log-form"
+          onSubmit={handleSaveLesson}
+          className="bg-zinc-900 border border-zinc-800 p-5 rounded-2xl space-y-4 shadow-xl"
+        >
+          <div className="flex items-center gap-2 border-b border-zinc-800 pb-3">
+            <BookOpen className="w-5 h-5 text-blue-400" />
+            <h3 className="text-white font-bold text-base">
+              {editingLessonId !== undefined ? 'Editar Aula Ministrada' : 'Registro de Aula Ministrada'}
+            </h3>
+          </div>
+
+          <div className="space-y-3">
+            {/* Date Selection */}
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-zinc-400 block">Data da Aula</label>
+              <div className="relative">
+                <input
+                  id="attendance-date-select"
+                  type="date"
+                  required
+                  disabled={isReadOnly}
+                  value={selectedDate}
+                  onChange={(e) => setSelectedDate(e.target.value)}
+                  className="bg-zinc-950 border border-zinc-800 text-zinc-200 text-xs rounded-xl px-3 py-2.5 w-full focus:ring-1 focus:ring-blue-500 focus:outline-none disabled:opacity-60"
+                />
+              </div>
+            </div>
+
+            {/* Lesson Count */}
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-zinc-400 block">Quantidade de Aulas / Horas</label>
+              <select
+                id="attendance-lesson-count-select"
+                value={lessonCount}
+                disabled={isReadOnly}
+                onChange={(e) => setLessonCount(parseInt(e.target.value))}
+                className="bg-zinc-950 border border-zinc-800 text-zinc-200 text-xs rounded-xl px-3 py-2.5 w-full focus:ring-1 focus:ring-blue-500 focus:outline-none cursor-pointer disabled:opacity-60 disabled:pointer-events-none"
+              >
+                <option value={1}>1 Aula / Hora de Aula</option>
+                <option value={2}>2 Aulas / Horas de Aula (Bloco Comum)</option>
+                <option value={3}>3 Aulas / Horas de Aula</option>
+                <option value={4}>4 Aulas / Horas de Aula</option>
+              </select>
+            </div>
+
+            {/* Lesson Content Description */}
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-zinc-400 block">Conteúdo Ministrado</label>
+              <textarea
+                id="attendance-content-textarea"
+                rows={4}
+                required
+                disabled={isReadOnly}
+                placeholder="Ex: Introdução à citologia, organelas citoplasmáticas e suas funções. Exercícios do livro didático pág 34-36."
+                value={content}
+                onChange={(e) => setContent(e.target.value)}
+                className="bg-zinc-950 border border-zinc-800 text-zinc-200 text-xs rounded-xl p-3 w-full focus:ring-1 focus:ring-blue-500 focus:outline-none disabled:opacity-60"
+              />
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between pt-3 border-t border-zinc-800 gap-2">
+            <span className="text-[10px] text-zinc-500">
+              {isReadOnly 
+                ? 'Visualizando Diário de Aula' 
+                : editingLessonId !== undefined
+                  ? '✏️ Editando registro selecionado'
+                  : currentLesson 
+                    ? '✓ Registro existente carregado' 
+                    : '* Registre a aula antes de fechar'}
+            </span>
+            <div className="flex items-center gap-1.5">
+              {editingLessonId !== undefined && (
+                <button
+                  id="cancel-edit-lesson-btn"
+                  type="button"
+                  onClick={() => {
+                    setEditingLessonId(undefined);
+                    setLessonCount(2);
+                    setContent('');
+                    setSelectedDate(new Date().toISOString().split('T')[0]);
+                  }}
+                  className="px-3 py-2 bg-zinc-800 hover:bg-zinc-750 text-zinc-300 rounded-xl text-xs font-bold transition cursor-pointer"
+                >
+                  Cancelar
+                </button>
+              )}
+              {!isReadOnly && (
+                <button
+                  id="save-lesson-btn"
+                  type="submit"
+                  className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer ${
+                    isSaved 
+                      ? 'bg-emerald-600 text-white' 
+                      : 'bg-blue-600 hover:bg-blue-500 text-white shadow shadow-blue-500/10'
+                  }`}
+                >
+                  <Save className="w-4 h-4" />
+                  {isSaved ? 'Salvo com Sucesso!' : editingLessonId !== undefined ? 'Atualizar Aula' : 'Salvar Diário de Aula'}
+                </button>
+              )}
+            </div>
+          </div>
+        </form>
+
+        {/* 3. Statistics & Launched Contents Report (Last) */}
+        <div className="bg-zinc-900 border border-zinc-800 p-5 rounded-2xl space-y-4 shadow-xl">
+          <div className="flex items-center gap-2 border-b border-zinc-800 pb-3">
+            <Info className="w-4 h-4 text-blue-400" />
+            <h3 className="text-white font-bold text-sm uppercase tracking-wider">Estatísticas do Bimestre</h3>
+          </div>
+
+          {/* Progress Card */}
+          {(() => {
+            const targetBimonthlyLessons = currentWorkload ? Math.round(currentWorkload.totalLessons / 4) : 40;
+            const sortedLessons = [...allLessons].sort((a, b) => b.date.localeCompare(a.date));
+            const formatLessonDate = (dateStr: string) => {
+              if (!dateStr) return '';
+              const parts = dateStr.split('-');
+              if (parts.length === 3) {
+                return `${parts[2]}/${parts[1]}`;
+              }
+              return dateStr;
+            };
+
+            return (
+              <div className="space-y-4">
+                <div className="bg-zinc-950/40 border border-zinc-850 p-4 rounded-xl space-y-2">
+                  <div className="text-zinc-400 text-xs font-semibold flex items-center justify-between">
+                    <span>Progresso no Bimestre:</span>
+                    <span className="font-mono font-bold bg-zinc-900 text-blue-400 px-2.5 py-0.5 rounded-full border border-zinc-800 text-[10px]">
+                      {totalLessonsGiven}/{targetBimonthlyLessons} Aulas (Faltam {Math.max(0, targetBimonthlyLessons - totalLessonsGiven)})
+                    </span>
+                  </div>
+                  {/* Progress bar */}
+                  <div className="w-full bg-zinc-950 h-2 rounded-full overflow-hidden border border-zinc-900">
+                    <div 
+                      className="bg-blue-500 h-full rounded-full transition-all duration-300" 
+                      style={{ width: `${Math.min(100, (totalLessonsGiven / targetBimonthlyLessons) * 100)}%` }}
+                    ></div>
+                  </div>
+                  <p className="text-[10px] text-zinc-500 mt-1">
+                    Cada falta atribuída deduz presença proporcional no cálculo da frequência acumulada.
+                  </p>
+                </div>
+
+                {/* Launched Contents list */}
+                <div className="space-y-2.5">
+                  <div className="flex items-center gap-1.5 text-zinc-350 text-xs font-bold uppercase tracking-wider">
+                    <BookOpen className="w-3.5 h-3.5 text-zinc-400" />
+                    <span>Conteúdos Lançados ({bimonthly}º Bim)</span>
+                  </div>
+
+                  <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-zinc-800">
+                    {sortedLessons.length === 0 ? (
+                      <div className="bg-zinc-950/20 border border-dashed border-zinc-850 p-6 text-center text-zinc-500 text-xs rounded-xl">
+                        Nenhum conteúdo lançado para este bimestre ainda.
+                      </div>
+                    ) : (
+                      sortedLessons.map((lesson) => (
+                        <div key={lesson.id} className="bg-zinc-950/50 border border-zinc-850/60 hover:border-zinc-800 p-3 rounded-xl flex items-center justify-between gap-3 group transition">
+                          {/* Date box badge */}
+                          <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-1.5 text-center min-w-[55px] shrink-0">
+                            <span className="block font-black text-xs text-zinc-100">{formatLessonDate(lesson.date)}</span>
+                            <span className="block text-[8px] text-zinc-500 font-mono mt-0.5">{lesson.lessonCount} {lesson.lessonCount === 1 ? 'aula' : 'aulas'}</span>
+                          </div>
+
+                          {/* Content */}
+                          <div className="flex-1 min-w-0">
+                            <p className="text-zinc-300 text-xs font-semibold leading-relaxed line-clamp-3">
+                              {lesson.content}
+                            </p>
+                          </div>
+
+                          {/* Actions */}
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => handleEditLesson(lesson)}
+                              disabled={isReadOnly}
+                              className="p-1.5 text-zinc-500 hover:text-blue-400 hover:bg-blue-500/10 rounded-lg transition disabled:opacity-20 disabled:pointer-events-none cursor-pointer"
+                              title="Editar Registro"
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteLesson(lesson.id!, lesson.date)}
+                              disabled={isReadOnly}
+                              className="p-1.5 text-zinc-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition disabled:opacity-20 disabled:pointer-events-none cursor-pointer"
+                              title="Excluir Registro"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+        </div>
+
       </div>
 
       {/* RIGHT COLUMN: Smart Roll Call Checklist (7 cols) */}
