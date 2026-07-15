@@ -140,8 +140,12 @@ export default function App() {
   const [teacherName, setTeacherName] = useState<string>(() => localStorage.getItem('portal_teacher_name') || '');
   const [isAuthEnabled, setIsAuthEnabled] = useState<boolean>(() => localStorage.getItem('portal_auth_enabled') === 'true');
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
+    const activeUser = localStorage.getItem('portal_active_user');
+    if (!activeUser) return false;
+
     const enabled = localStorage.getItem('portal_auth_enabled') === 'true';
     if (!enabled) return true;
+
     return (
       sessionStorage.getItem('portal_is_authenticated') === 'true' ||
       localStorage.getItem('portal_is_authenticated_persistent') === 'true'
@@ -741,7 +745,7 @@ export default function App() {
     { key: 'settings', label: 'Configurações', icon: Settings, color: 'text-slate-400' },
   ];
 
-  if (isAuthEnabled && !isAuthenticated) {
+  if (!isAuthenticated) {
     return (
       <div id="portal-lockscreen-root" className="min-h-screen bg-[#09090b] text-zinc-100 flex flex-col items-center justify-center font-sans antialiased relative overflow-hidden px-4">
         {/* Subtle decorative background lights */}
