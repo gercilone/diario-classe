@@ -10,11 +10,48 @@ import {
 } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
 
-// Initialize Firebase App
-const app = initializeApp(firebaseConfig);
+// Helper to remove any 'undefined' fields recursively so Firestore never crashes
+export function cleanDataForFirestore(obj: any): any {
+  if (obj === null || obj === undefined) {
+    return null;
+  }
+  if (Array.isArray(obj)) {
+    return obj.map(item => cleanDataForFirestore(item));
+  }
+  if (typeof obj === 'object') {
+    if (obj instanceof Date) {
+      return obj;
+    }
+    const cleaned: any = {};
+    for (const key of Object.keys(obj)) {
+      const val = obj[key];
+      if (val !== undefined) {
+        cleaned[key] = cleanDataForFirestore(val);
+      }
+    }
+    return cleaned;
+  }
+  return obj;
+}
 
-// Initialize Firestore with Custom Database ID
-export const firestore = initializeFirestore(app, {}, firebaseConfig.firestoreDatabaseId || '(default)');
+// Lazy safe Firestore initialization
+let firestoreInstance: any = null;
+
+export function getFirestoreInstance() {
+  if (firestoreInstance) return firestoreInstance;
+  try {
+    if (!firebaseConfig || !firebaseConfig.apiKey) {
+      console.warn('Firebase configuration is missing or invalid. Offline mode active.');
+      return null;
+    }
+    const app = initializeApp(firebaseConfig);
+    firestoreInstance = initializeFirestore(app, {}, firebaseConfig.firestoreDatabaseId || '(default)');
+    return firestoreInstance;
+  } catch (error) {
+    console.error('Failed to initialize Firebase / Firestore:', error);
+    return null;
+  }
+}
 
 // Interface for Professor account matching App.tsx
 export interface ProfessorAccount {
@@ -29,11 +66,16 @@ export interface ProfessorAccount {
 }
 
 // 1. PROFESSORS PROFILES SYNC (Cloud Database Shared Registry)
-// This ensures any teacher registered on any device shows up on all devices in the selector.
 export async function syncProfessorsListInCloud() {
+  const dbInstance = getFirestoreInstance();
+  if (!dbInstance) {
+    const localStr = localStorage.getItem('portal_professors_list');
+    return localStr ? JSON.parse(localStr) : [];
+  }
+
   try {
     // A. Pull latest professors list from cloud
-    const professorsCol = collection(firestore, 'professors');
+    const professorsCol = collection(dbInstance, 'professors');
     const snapshot = await getDocs(professorsCol);
     const cloudList: ProfessorAccount[] = [];
     
@@ -52,13 +94,8 @@ export async function syncProfessorsListInCloud() {
       }
     }
 
-    // Use a map to merge. Cloud profiles take precedence unless local has newer info (but for simplicity, we merge by username)
     const mergedMap = new Map<string, ProfessorAccount>();
-    
-    // Add local ones first
     localList.forEach(p => mergedMap.set(p.username.toLowerCase(), p));
-    
-    // Override/add cloud ones
     cloudList.forEach(p => mergedMap.set(p.username.toLowerCase(), p));
 
     const mergedList = Array.from(mergedMap.values());
@@ -69,14 +106,14 @@ export async function syncProfessorsListInCloud() {
       const usernameLower = localProf.username.toLowerCase();
       const existsInCloud = cloudList.some(p => p.username.toLowerCase() === usernameLower);
       if (!existsInCloud) {
-        await setDoc(doc(firestore, 'professors', usernameLower), localProf);
+        const cleanedProf = cleanDataForFirestore(localProf);
+        await setDoc(doc(dbInstance, 'professors', usernameLower), cleanedProf);
       }
     }
 
     return mergedList;
   } catch (error) {
     console.error('Error syncing professors list with cloud:', error);
-    // Return local list as fallback
     const localStr = localStorage.getItem('portal_professors_list');
     return localStr ? JSON.parse(localStr) : [];
   }
@@ -84,18 +121,19 @@ export async function syncProfessorsListInCloud() {
 
 // Save a single professor account to the cloud
 export async function saveProfessorToCloud(prof: ProfessorAccount) {
+  const dbInstance = getFirestoreInstance();
+  if (!dbInstance) return;
+
   try {
     const usernameLower = prof.username.toLowerCase();
-    await setDoc(doc(firestore, 'professors', usernameLower), prof);
+    const cleanedProf = cleanDataForFirestore(prof);
+    await setDoc(doc(dbInstance, 'professors', usernameLower), cleanedProf);
   } catch (error) {
     console.error('Error saving professor to cloud:', error);
   }
 }
 
-
 // 2. DIARY DATA SYNCHRONIZATION
-// We sync all Dexie tables to diaries/{username}/{tableName}/{docId}
-
 const TABLES_TO_SYNC = [
   'schools',
   'classes',
@@ -116,19 +154,21 @@ const TABLES_TO_SYNC = [
 // Pull all diary data from cloud for a specific professor and save to Dexie
 export async function pullTeacherDataFromCloud(username: string, dexieDb: any): Promise<boolean> {
   if (!username) return false;
+  const dbInstance = getFirestoreInstance();
+  if (!dbInstance) return false;
+
   // Disable sync hooks globally so we don't trigger deletion / set actions on Dexie writes
   (window as any).isCloudSyncDisabled = true;
   try {
     const userLower = username.toLowerCase();
     
     for (const tableName of TABLES_TO_SYNC) {
-      const colRef = collection(firestore, `diaries/${userLower}/${tableName}`);
+      const colRef = collection(dbInstance, `diaries/${userLower}/${tableName}`);
       const snapshot = await getDocs(colRef);
       
       const records: any[] = [];
       snapshot.forEach((doc) => {
         const data = doc.data();
-        // Convert document ID back to number if it's numeric
         const id = isNaN(Number(doc.id)) ? doc.id : Number(doc.id);
         records.push({ ...data, id });
       });
@@ -153,6 +193,9 @@ export async function pullTeacherDataFromCloud(username: string, dexieDb: any): 
 // Push all local diary data to cloud (Full Backup/Override)
 export async function pushTeacherDataToCloud(username: string, dexieDb: any): Promise<boolean> {
   if (!username) return false;
+  const dbInstance = getFirestoreInstance();
+  if (!dbInstance) return false;
+
   try {
     const userLower = username.toLowerCase();
 
@@ -162,20 +205,19 @@ export async function pushTeacherDataToCloud(username: string, dexieDb: any): Pr
       const localRecords = await dexieDb[tableName].toArray();
       const colPath = `diaries/${userLower}/${tableName}`;
 
-      // We can use batch writes to make this efficient
-      // Firestore batch supports up to 500 operations
-      let batch = writeBatch(firestore);
+      let batch = writeBatch(dbInstance);
       let opCount = 0;
 
       for (const record of localRecords) {
         if (!record.id) continue;
-        const docRef = doc(firestore, colPath, String(record.id));
-        batch.set(docRef, record);
+        const docRef = doc(dbInstance, colPath, String(record.id));
+        const cleanedRecord = cleanDataForFirestore(record);
+        batch.set(docRef, cleanedRecord);
         opCount++;
 
         if (opCount === 400) {
           await batch.commit();
-          batch = writeBatch(firestore);
+          batch = writeBatch(dbInstance);
           opCount = 0;
         }
       }
@@ -200,14 +242,18 @@ export async function syncSingleRecord(
   action: 'set' | 'delete'
 ) {
   if (!username || !tableName || !recordId) return;
+  const dbInstance = getFirestoreInstance();
+  if (!dbInstance) return;
+
   try {
     const userLower = username.toLowerCase();
-    const docRef = doc(firestore, `diaries/${userLower}/${tableName}`, String(recordId));
+    const docRef = doc(dbInstance, `diaries/${userLower}/${tableName}`, String(recordId));
     
     if (action === 'delete') {
       await deleteDoc(docRef);
     } else {
-      await setDoc(docRef, recordData);
+      const cleanedData = cleanDataForFirestore(recordData);
+      await setDoc(docRef, cleanedData);
     }
   } catch (error) {
     console.error(`Error syncing single record on ${tableName}:`, error);
@@ -222,8 +268,21 @@ export interface CoordinatorAccount {
 }
 
 export async function syncCoordinatorsListInCloud(): Promise<CoordinatorAccount[]> {
+  const dbInstance = getFirestoreInstance();
+  const defaultCoordsList = [
+    { username: 'coordenador', password: '123', name: 'Coordenador Geral' },
+    { username: 'admin', password: 'admin', name: 'Administrador Geral' },
+    { username: 'administrador', password: 'administrador', name: 'Administrador Geral' }
+  ];
+
+  if (!dbInstance) {
+    const localStr = localStorage.getItem('portal_coordinators_list');
+    if (localStr) return JSON.parse(localStr);
+    return defaultCoordsList;
+  }
+
   try {
-    const coordsCol = collection(firestore, 'coordinators');
+    const coordsCol = collection(dbInstance, 'coordinators');
     const snapshot = await getDocs(coordsCol);
     const cloudList: CoordinatorAccount[] = [];
     
@@ -231,31 +290,11 @@ export async function syncCoordinatorsListInCloud(): Promise<CoordinatorAccount[
       cloudList.push(doc.data() as CoordinatorAccount);
     });
 
-    // Seed default coordinator and administrators only if the cloud list is completely empty
     if (cloudList.length === 0) {
-      const defaultCoord: CoordinatorAccount = {
-        username: 'coordenador',
-        password: '123',
-        name: 'Coordenador Geral'
-      };
-      await saveCoordinatorToCloud(defaultCoord);
-      cloudList.push(defaultCoord);
-
-      const adminCoord: CoordinatorAccount = {
-        username: 'admin',
-        password: 'admin',
-        name: 'Administrador Geral'
-      };
-      await saveCoordinatorToCloud(adminCoord);
-      cloudList.push(adminCoord);
-
-      const administradorCoord: CoordinatorAccount = {
-        username: 'administrador',
-        password: 'administrador',
-        name: 'Administrador Geral'
-      };
-      await saveCoordinatorToCloud(administradorCoord);
-      cloudList.push(administradorCoord);
+      for (const dCoord of defaultCoordsList) {
+        await saveCoordinatorToCloud(dCoord);
+        cloudList.push(dCoord);
+      }
     }
 
     localStorage.setItem('portal_coordinators_list', JSON.stringify(cloudList));
@@ -266,39 +305,43 @@ export async function syncCoordinatorsListInCloud(): Promise<CoordinatorAccount[
     if (localStr) {
       return JSON.parse(localStr);
     }
-    // Final fallback
-    return [
-      { username: 'coordenador', password: '123', name: 'Coordenador Geral' },
-      { username: 'admin', password: 'admin', name: 'Administrador Geral' },
-      { username: 'administrador', password: 'administrador', name: 'Administrador Geral' }
-    ];
+    return defaultCoordsList;
   }
 }
 
 export async function saveCoordinatorToCloud(coord: CoordinatorAccount) {
+  const dbInstance = getFirestoreInstance();
+  if (!dbInstance) return;
+
   try {
     const usernameLower = coord.username.toLowerCase();
-    await setDoc(doc(firestore, 'coordinators', usernameLower), coord);
+    const cleanedCoord = cleanDataForFirestore(coord);
+    await setDoc(doc(dbInstance, 'coordinators', usernameLower), cleanedCoord);
   } catch (error) {
     console.error('Error saving coordinator to cloud:', error);
   }
 }
 
 export async function deleteCoordinatorFromCloud(username: string) {
+  const dbInstance = getFirestoreInstance();
+  if (!dbInstance) return;
+
   try {
     const usernameLower = username.toLowerCase();
-    await deleteDoc(doc(firestore, 'coordinators', usernameLower));
+    await deleteDoc(doc(dbInstance, 'coordinators', usernameLower));
   } catch (error) {
     console.error('Error deleting coordinator from cloud:', error);
   }
 }
 
 export async function deleteProfessorFromCloud(username: string) {
+  const dbInstance = getFirestoreInstance();
+  if (!dbInstance) return;
+
   try {
     const usernameLower = username.toLowerCase();
-    await deleteDoc(doc(firestore, 'professors', usernameLower));
+    await deleteDoc(doc(dbInstance, 'professors', usernameLower));
   } catch (error) {
     console.error('Error deleting professor from cloud:', error);
   }
 }
-
