@@ -515,27 +515,15 @@ export default function TabAGrades({ schoolId, classId, subjectId, bimonthly, is
     return { media: parseFloat(media.toFixed(1)), hasGrades: true };
   };
 
-  // Helper style classes for individual grades (all grades below 7.0 should be red)
+  // Helper style classes for individual grades (individual grades should not be highlighted in red)
   const getGradeInputClass = (studentId: number, field: 't1' | 't2' | 't3' | 't4' | 't5' | 'exam') => {
-    const valStr = getGradeValue(studentId, field);
-    if (!valStr) return 'text-zinc-100 bg-zinc-800 focus:ring-blue-500';
-    const val = parseFloat(valStr.replace(',', '.'));
-    if (isNaN(val)) return 'text-zinc-100 bg-zinc-800 focus:ring-blue-500';
-    return val < 7.0
-      ? 'text-rose-400 font-bold bg-rose-500/10 border-rose-500/30 focus:ring-rose-500'
-      : 'text-zinc-100 bg-zinc-800 focus:ring-blue-500';
+    return 'text-zinc-100 bg-zinc-800 focus:ring-blue-500';
   };
 
   const getExtraGradeInputClass = (studentId: number, field: 'recSem1' | 'recSem2' | 'finalExam') => {
-    const valStr = getExtraGradeValue(studentId, field);
-    if (!valStr) return 'text-zinc-100 bg-zinc-800 focus:ring-blue-500';
-    const val = parseFloat(valStr.replace(',', '.'));
-    if (isNaN(val)) return 'text-zinc-100 bg-zinc-800 focus:ring-blue-500';
-    return val < 7.0
-      ? 'text-rose-400 font-bold bg-rose-500/10 border-rose-500/30 focus:ring-rose-500'
-      : field === 'finalExam'
-        ? 'text-red-400 font-bold bg-zinc-800 focus:ring-red-500'
-        : 'text-amber-400 font-bold bg-zinc-800 focus:ring-blue-500';
+    return field === 'finalExam'
+      ? 'text-red-400 font-bold bg-zinc-800 focus:ring-red-500'
+      : 'text-amber-400 font-bold bg-zinc-800 focus:ring-blue-500';
   };
 
   const t1Label = tempDesc.t1 || 'Trabalho 1';

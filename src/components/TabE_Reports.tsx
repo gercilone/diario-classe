@@ -135,13 +135,6 @@ export default function TabEReports({ schoolId, classId, subjectId, bimonthly, i
     };
   };
 
-  const getReportGradeClass = (valStr: string) => {
-    if (valStr === '-') return '';
-    const val = parseFloat(valStr.replace(',', '.'));
-    if (isNaN(val)) return '';
-    return val < 7.0 ? 'text-rose-400 font-bold' : '';
-  };
-
   // Vistos calculation
   const getStudentVistosRow = (studentId: number) => {
     if (vistoColumns.length === 0) return { checklist: [], received: 0, total: 0, pct: 0 };
@@ -626,12 +619,12 @@ export default function TabEReports({ schoolId, classId, subjectId, bimonthly, i
                         <tr key={st.id} className="hover:bg-white/5">
                           <td className="py-2 px-2 text-center font-mono">{st.rollNumber}</td>
                           <td className="py-2 px-3 font-semibold text-zinc-200 print:text-black">{st.name}</td>
-                          <td className={`py-2 px-2 text-center font-mono ${getReportGradeClass(row.t1)}`}>{row.t1}</td>
-                          <td className={`py-2 px-2 text-center font-mono ${getReportGradeClass(row.t2)}`}>{row.t2}</td>
-                          <td className={`py-2 px-2 text-center font-mono ${getReportGradeClass(row.t3)}`}>{row.t3}</td>
-                          <td className={`py-2 px-2 text-center font-mono ${getReportGradeClass(row.t4)}`}>{row.t4}</td>
-                          <td className={`py-2 px-2 text-center font-mono ${getReportGradeClass(row.t5)}`}>{row.t5}</td>
-                          <td className={`py-2 px-2 text-center font-mono ${getReportGradeClass(row.exam)}`}>{row.exam}</td>
+                          <td className="py-2 px-2 text-center font-mono">{row.t1}</td>
+                          <td className="py-2 px-2 text-center font-mono">{row.t2}</td>
+                          <td className="py-2 px-2 text-center font-mono">{row.t3}</td>
+                          <td className="py-2 px-2 text-center font-mono">{row.t4}</td>
+                          <td className="py-2 px-2 text-center font-mono">{row.t5}</td>
+                          <td className="py-2 px-2 text-center font-mono">{row.exam}</td>
                           <td className={`py-2 px-3 text-center font-mono font-extrabold bg-blue-950/10 text-blue-400 print:text-black ${isBelow ? 'text-rose-400' : ''}`}>
                             {row.average}
                           </td>
