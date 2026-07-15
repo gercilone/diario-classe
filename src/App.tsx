@@ -123,6 +123,9 @@ export default function App() {
   const [recoveryMessage, setRecoveryMessage] = useState('');
   const [recoveryError, setRecoveryError] = useState('');
 
+  const [isInitialSyncing, setIsInitialSyncing] = useState(false);
+  const [syncStatusMessage, setSyncStatusMessage] = useState('');
+
   const handleSecuritySaved = () => {
     const enabled = localStorage.getItem('portal_auth_enabled') === 'true';
     setIsAuthEnabled(enabled);
@@ -316,13 +319,56 @@ export default function App() {
   const classes = useLiveQuery(() => db.classes.toArray()) || [];
   const subjects = useLiveQuery(() => db.subjects.toArray()) || [];
 
-  // Seed database silently on mount if empty
+  // Seed database silently on mount if empty, and sync with Firebase online database
   useEffect(() => {
     const initDb = async () => {
-      await seedDatabase();
+      // Sync professor profiles list from the cloud on mount
+      try {
+        const { syncProfessorsListInCloud } = await import('./firebase');
+        const updatedList = await syncProfessorsListInCloud();
+        if (updatedList && updatedList.length > 0) {
+          setProfessors(updatedList);
+        }
+      } catch (err) {
+        console.error('Error syncing professors list on mount:', err);
+      }
+
+      // Check active teacher data sync
+      const activeUser = localStorage.getItem('portal_active_user');
+      if (activeUser && isAuthenticated) {
+        try {
+          const schoolCount = await db.schools.count();
+          if (schoolCount === 0) {
+            setIsInitialSyncing(true);
+            setSyncStatusMessage(`Sincronizando com a Nuvem... Buscando diário de classe de @${activeUser}...`);
+            
+            const { pullTeacherDataFromCloud, pushTeacherDataToCloud } = await import('./firebase');
+            await pullTeacherDataFromCloud(activeUser, db);
+            
+            // If still 0 schools, it's a completely new user. Let's seed default demo data!
+            const newSchoolCount = await db.schools.count();
+            if (newSchoolCount === 0) {
+              setSyncStatusMessage('Nenhum dado encontrado na nuvem. Criando diários de demonstração...');
+              await seedDatabase();
+              // Save the seeded data back to Firestore so it starts synced!
+              await pushTeacherDataToCloud(activeUser, db);
+            }
+            
+            setIsInitialSyncing(false);
+            window.location.reload();
+          }
+        } catch (err) {
+          console.error('Error during startup sync:', err);
+          setIsInitialSyncing(false);
+          await seedDatabase();
+        }
+      } else {
+        // Fallback for default unauthenticated startup
+        await seedDatabase();
+      }
     };
     initDb();
-  }, []);
+  }, [isAuthenticated]);
 
   // Proactive Selection Sync:
   // If no school is selected, pick the first one as default when loaded
@@ -889,6 +935,30 @@ export default function App() {
           <p className="text-center text-[10px] text-zinc-600 mt-6 uppercase tracking-wider">
             Portal do Professor — 100% Offline e Seguro
           </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (isInitialSyncing) {
+    return (
+      <div className="min-h-screen bg-[#09090b] text-zinc-100 flex flex-col items-center justify-center font-sans antialiased relative overflow-hidden px-4">
+        <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-emerald-600/10 rounded-full blur-[120px] pointer-events-none" />
+        <div className="w-full max-w-md relative z-10 text-center space-y-6 animate-in fade-in zoom-in-95 duration-300">
+          <div className="inline-flex w-16 h-16 bg-emerald-600 rounded-2xl items-center justify-center shadow-2xl shadow-emerald-500/30 ring-1 ring-emerald-400/20">
+            <Sparkles className="w-8 h-8 text-white animate-pulse" />
+          </div>
+          <div className="space-y-2">
+            <h1 className="text-xl font-bold text-white">Sincronização Online</h1>
+            <p className="text-sm text-zinc-400 font-medium leading-relaxed">
+              {syncStatusMessage}
+            </p>
+          </div>
+          <div className="w-32 h-1 bg-zinc-800 rounded-full mx-auto overflow-hidden relative">
+            <div className="h-full bg-emerald-500 rounded-full w-1/2 absolute left-0 animate-[shimmer_1.5s_infinite]" style={{
+              backgroundImage: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent)'
+            }} />
+          </div>
         </div>
       </div>
     );

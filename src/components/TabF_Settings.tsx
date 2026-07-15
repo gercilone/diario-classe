@@ -2,7 +2,7 @@ import { useState, FormEvent, ChangeEvent } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, seedDatabase } from '../db';
 import { School, Class, Subject, Student, SubjectWorkload, WeeklySchedule } from '../types';
-import { Plus, Trash2, Edit2, X, Import, Download, Upload, Calendar, Clock, BookOpen, School as SchoolIcon, Users, Settings, Database, Check, AlertTriangle, Sparkles, Save, User, Lock, Shield, Eye, EyeOff } from 'lucide-react';
+import { Plus, Trash2, Edit2, X, Import, Download, Upload, Calendar, Clock, BookOpen, School as SchoolIcon, Users, Settings, Database, Check, AlertTriangle, Sparkles, Save, User, Lock, Shield, Eye, EyeOff, Cloud, CloudUpload, CloudDownload } from 'lucide-react';
 
 interface TabFSettingsProps {
   teacherName: string;
@@ -481,6 +481,80 @@ export default function TabFSettings({ teacherName, setTeacherName, onSecuritySa
     } catch (err) {
       console.error(err);
     }
+  };
+
+  // CLOUD BACKUP PUSH/PULL
+  const [isSyncingCloud, setIsSyncingCloud] = useState(false);
+
+  const handleCloudPush = async () => {
+    const activeUser = localStorage.getItem('portal_active_user');
+    if (!activeUser) return;
+
+    setIsSyncingCloud(true);
+    try {
+      const { pushTeacherDataToCloud } = await import('../firebase');
+      const success = await pushTeacherDataToCloud(activeUser, db);
+      if (success) {
+        setAlertDialog({
+          isOpen: true,
+          title: 'Nuvem Atualizada',
+          message: 'Seus dados locais foram enviados com sucesso para a nuvem! Todas as suas turmas, alunos e notas estão guardadas com segurança no Firebase.'
+        });
+      } else {
+        throw new Error('Push failed');
+      }
+    } catch (err) {
+      console.error(err);
+      setAlertDialog({
+        isOpen: true,
+        title: 'Erro de Sincronização',
+        message: 'Não foi possível enviar os dados para a nuvem. Verifique sua conexão com a internet e tente novamente.'
+      });
+    } finally {
+      setIsSyncingCloud(false);
+    }
+  };
+
+  const handleCloudPull = async () => {
+    const activeUser = localStorage.getItem('portal_active_user');
+    if (!activeUser) return;
+
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Restaurar da Nuvem',
+      message: 'AVISO: Baixar os dados da nuvem substituirá todos os dados atuais cadastrados neste navegador pelo que está salvo no servidor. Deseja realmente continuar?',
+      confirmText: 'Baixar da Nuvem',
+      cancelText: 'Cancelar',
+      onConfirm: async () => {
+        setConfirmDialog(null);
+        setIsSyncingCloud(true);
+        try {
+          const { pullTeacherDataFromCloud } = await import('../firebase');
+          const success = await pullTeacherDataFromCloud(activeUser, db);
+          if (success) {
+            setAlertDialog({
+              isOpen: true,
+              title: 'Restauração Concluída',
+              message: 'Seus diários de classe foram restaurados com sucesso a partir da nuvem!',
+              onClose: () => {
+                window.location.reload();
+              }
+            });
+          } else {
+            throw new Error('Pull failed');
+          }
+        } catch (err) {
+          console.error(err);
+          setAlertDialog({
+            isOpen: true,
+            title: 'Erro de Sincronização',
+            message: 'Não foi possível baixar os dados da nuvem. Verifique sua conexão com a internet.'
+          });
+        } finally {
+          setIsSyncingCloud(false);
+        }
+      }
+    });
   };
 
   // BACKUP EXPORT
@@ -1777,6 +1851,64 @@ export default function TabFSettings({ teacherName, setTeacherName, onSecuritySa
                 </label>
               </div>
 
+            </div>
+          </div>
+
+          {/* Sincronização em Nuvem (Firebase Firestore) */}
+          <div className="bg-zinc-900 border border-zinc-800 p-6 rounded-2xl space-y-4">
+            <h3 className="text-white font-bold text-sm flex items-center gap-2">
+              <Cloud className="w-5 h-5 text-emerald-400 animate-pulse" /> Sincronização em Nuvem Online (Firebase)
+            </h3>
+            <p className="text-xs text-zinc-400 leading-relaxed">
+              O Portal do Professor está conectado a um banco de dados em nuvem seguro e gratuito da Google (Firebase Firestore). Suas alterações locais (notas, presenças, vistos) são salvas automaticamente em tempo real! Se você trocar de dispositivo, pode recuperar tudo instantaneamente.
+            </p>
+
+            <div className="relative flex items-center gap-2 p-3 bg-zinc-950/40 rounded-xl border border-zinc-850 text-xs">
+              <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping" />
+              <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 absolute" />
+              <span className="text-zinc-300 font-semibold ml-2">Status da Nuvem:</span>
+              <span className="text-emerald-400 font-bold">100% Conectado e Ativo</span>
+              <span className="text-[10px] text-zinc-500 font-mono ml-auto">@{localStorage.getItem('portal_active_user') || 'professor'}</span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4 border-t border-zinc-800/80">
+              {/* BACKUP TO CLOUD */}
+              <div className="p-4 bg-zinc-950/40 rounded-xl border border-zinc-800 space-y-3">
+                <div className="flex items-center gap-2 text-emerald-400">
+                  <CloudUpload className="w-4 h-4" />
+                  <h4 className="text-xs font-bold uppercase tracking-wider">Fazer Backup para Nuvem</h4>
+                </div>
+                <p className="text-[11px] text-zinc-500">
+                  Envia todos os seus dados locais deste dispositivo para o servidor em nuvem. Use se tiver feito alterações offline que deseja consolidar na nuvem agora.
+                </p>
+                <button
+                  type="button"
+                  disabled={isSyncingCloud}
+                  onClick={handleCloudPush}
+                  className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shadow cursor-pointer"
+                >
+                  {isSyncingCloud ? 'Sincronizando...' : <><CloudUpload className="w-4 h-4" /> Enviar para Nuvem</>}
+                </button>
+              </div>
+
+              {/* RESTORE FROM CLOUD */}
+              <div className="p-4 bg-zinc-950/40 rounded-xl border border-zinc-800 space-y-3">
+                <div className="flex items-center gap-2 text-blue-400">
+                  <CloudDownload className="w-4 h-4" />
+                  <h4 className="text-xs font-bold uppercase tracking-wider">Restaurar da Nuvem</h4>
+                </div>
+                <p className="text-[11px] text-zinc-500">
+                  Baixa todas as suas turmas, alunos e notas do servidor em nuvem e substitui as informações locais deste navegador.
+                </p>
+                <button
+                  type="button"
+                  disabled={isSyncingCloud}
+                  onClick={handleCloudPull}
+                  className="w-full py-2.5 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 text-blue-400 border border-blue-500/20 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  {isSyncingCloud ? 'Sincronizando...' : <><CloudDownload className="w-4 h-4" /> Baixar da Nuvem</>}
+                </button>
+              </div>
             </div>
           </div>
 
