@@ -149,7 +149,70 @@ async function runMigration() {
         recSemestral2: bg.recSemestral2 ?? 0,
         provaFinal: bg.provaFinal ?? 0
       };
-    })
+    }),
+    extraGrades: (() => {
+      const extraGradesList: any[] = [];
+      const extraGradesMap = new Map<string, { studentId: number; subjectId: number; recSem1?: number; recSem2?: number; finalExam?: number }>();
+
+      // Try to extract from allStudents
+      allStudents.forEach((student: any) => {
+        const recSem1 = student.recSem1 ?? student.recSemestral1;
+        const recSem2 = student.recSem2 ?? student.recSemestral2;
+        const finalExam = student.finalExam ?? student.provaFinal;
+        const defaultSubjectId = 10; // default Mathematics
+
+        if (
+          (recSem1 !== undefined && recSem1 !== null && Number(recSem1) > 0) ||
+          (recSem2 !== undefined && recSem2 !== null && Number(recSem2) > 0) ||
+          (finalExam !== undefined && finalExam !== null && Number(finalExam) > 0)
+        ) {
+          const sId = Number(student.id);
+          const key = `${sId}_${defaultSubjectId}`;
+          const existing = extraGradesMap.get(key) || { studentId: sId, subjectId: defaultSubjectId };
+
+          if (recSem1 !== undefined && recSem1 !== null && Number(recSem1) > 0) existing.recSem1 = Number(recSem1);
+          if (recSem2 !== undefined && recSem2 !== null && Number(recSem2) > 0) existing.recSem2 = Number(recSem2);
+          if (finalExam !== undefined && finalExam !== null && Number(finalExam) > 0) existing.finalExam = Number(finalExam);
+
+          extraGradesMap.set(key, existing);
+        }
+      });
+
+      // Try to extract from allGrades (the raw grades files)
+      allGrades.forEach((bg: any) => {
+        const recSem1 = bg.recSem1 ?? bg.recSemestral1;
+        const recSem2 = bg.recSem2 ?? bg.recSemestral2;
+        const finalExam = bg.finalExam ?? bg.provaFinal;
+        const subjectNameLower = (bg.subjectName || 'Geral').toLowerCase();
+        const bgSubjectId = subjectMap.get(subjectNameLower) || 11;
+        const bgStudentId = Number(bg.studentId);
+
+        if (
+          (recSem1 !== undefined && recSem1 !== null && Number(recSem1) > 0) ||
+          (recSem2 !== undefined && recSem2 !== null && Number(recSem2) > 0) ||
+          (finalExam !== undefined && finalExam !== null && Number(finalExam) > 0)
+        ) {
+          const key = `${bgStudentId}_${bgSubjectId}`;
+          const existing = extraGradesMap.get(key) || { studentId: bgStudentId, subjectId: bgSubjectId };
+
+          if (recSem1 !== undefined && recSem1 !== null && Number(recSem1) > 0) existing.recSem1 = Number(recSem1);
+          if (recSem2 !== undefined && recSem2 !== null && Number(recSem2) > 0) existing.recSem2 = Number(recSem2);
+          if (finalExam !== undefined && finalExam !== null && Number(finalExam) > 0) existing.finalExam = Number(finalExam);
+
+          extraGradesMap.set(key, existing);
+        }
+      });
+
+      let idx = 1;
+      extraGradesMap.forEach((val) => {
+        extraGradesList.push({
+          id: idx++,
+          ...val
+        });
+      });
+
+      return extraGradesList;
+    })()
   };
 
   // 5. BULK UPLOADING IN BATCHES TO FIRESTORE
