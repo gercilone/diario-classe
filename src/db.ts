@@ -32,8 +32,8 @@ export class TeacherDatabase extends Dexie {
   vistoRankingScores!: Table<VistoRankingScore>;
   extraGrades!: Table<ExtraGrade>;
 
-  constructor() {
-    super('TeacherDatabase');
+  constructor(databaseName: string = 'TeacherDatabase') {
+    super(databaseName);
     this.version(1).stores({
       schools: '++id, name',
       classes: '++id, name, schoolId',
@@ -53,7 +53,23 @@ export class TeacherDatabase extends Dexie {
   }
 }
 
-export const db = new TeacherDatabase();
+let currentDbName = localStorage.getItem('portal_active_user_db') || 'TeacherDatabase';
+let activeDb = new TeacherDatabase(currentDbName);
+
+export const db = new Proxy({}, {
+  get(target, prop) {
+    const latestDbName = localStorage.getItem('portal_active_user_db') || 'TeacherDatabase';
+    if (latestDbName !== currentDbName) {
+      currentDbName = latestDbName;
+      activeDb = new TeacherDatabase(currentDbName);
+    }
+    const value = Reflect.get(activeDb, prop);
+    if (typeof value === 'function') {
+      return value.bind(activeDb);
+    }
+    return value;
+  }
+}) as TeacherDatabase;
 
 // Seed function to initialize dummy data if db is empty
 export async function seedDatabase() {

@@ -8,10 +8,78 @@ import TabCGamification from './components/TabC_Gamification';
 import TabDAttendance from './components/TabD_Attendance';
 import TabEReports from './components/TabE_Reports';
 import TabFSettings from './components/TabF_Settings';
-import { FileText, CheckSquare, Trophy, Calendar, FileBarChart2, Settings, Sparkles, Lock, User, Eye, EyeOff, LogOut, Key, AlertTriangle } from 'lucide-react';
+import { FileText, CheckSquare, Trophy, Calendar, FileBarChart2, Settings, Sparkles, Lock, User, Eye, EyeOff, LogOut, Key, AlertTriangle, Plus } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 type TabKey = 'attendance' | 'grades' | 'vistos' | 'gamification' | 'reports' | 'settings';
+
+interface ProfessorAccount {
+  username: string;
+  password:  string;
+  teacherName: string;
+  dbName: string;
+  passwordHint?: string;
+  securityQuestion?: string;
+  securityAnswer?: string;
+  authEnabled: boolean;
+}
+
+function getProfessorsList(): ProfessorAccount[] {
+  const listStr = localStorage.getItem('portal_professors_list');
+  if (listStr) {
+    try {
+      return JSON.parse(listStr);
+    } catch (e) {
+      console.error(e);
+    }
+  }
+  
+  // Migrate existing single user if available
+  const oldUsername = localStorage.getItem('portal_username') || 'professor';
+  const oldPassword = localStorage.getItem('portal_password') || '123456';
+  const oldName = localStorage.getItem('portal_teacher_name') || 'Gercilone';
+  const oldAuthEnabled = localStorage.getItem('portal_auth_enabled') === 'true';
+  const oldHint = localStorage.getItem('portal_password_hint') || '';
+  const oldQuestion = localStorage.getItem('portal_security_question') || '';
+  const oldAnswer = localStorage.getItem('portal_security_answer') || '';
+  
+  const defaultUser: ProfessorAccount = {
+    username: oldUsername,
+    password: oldPassword,
+    teacherName: oldName,
+    dbName: 'TeacherDatabase', // Keep original default database name
+    passwordHint: oldHint,
+    securityQuestion: oldQuestion,
+    securityAnswer: oldAnswer,
+    authEnabled: oldAuthEnabled
+  };
+  
+  const list = [defaultUser];
+  localStorage.setItem('portal_professors_list', JSON.stringify(list));
+  
+  if (!localStorage.getItem('portal_active_user')) {
+    localStorage.setItem('portal_active_user', oldUsername);
+    localStorage.setItem('portal_active_user_db', 'TeacherDatabase');
+  }
+  
+  return list;
+}
+
+function getGradientForName(name: string) {
+  const colors = [
+    'from-blue-600 to-indigo-700 shadow-blue-500/10 border-blue-400/20',
+    'from-emerald-500 to-teal-600 shadow-emerald-500/10 border-emerald-400/20',
+    'from-purple-600 to-pink-700 shadow-purple-500/10 border-purple-400/20',
+    'from-amber-500 to-orange-600 shadow-amber-500/10 border-amber-400/20',
+    'from-rose-500 to-red-600 shadow-rose-500/10 border-rose-400/20',
+    'from-cyan-500 to-blue-600 shadow-cyan-500/10 border-cyan-400/20',
+  ];
+  let sum = 0;
+  for (let i = 0; i < name.length; i++) {
+    sum += name.charCodeAt(i);
+  }
+  return colors[sum % colors.length];
+}
 
 export default function App() {
   const [selectedSchoolId, setSelectedSchoolId] = useState<number | undefined>(undefined);
@@ -21,6 +89,15 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<TabKey>('attendance');
 
   // TEACHER PROFILE & AUTHENTICATION STATES
+  const [professors, setProfessors] = useState<ProfessorAccount[]>(() => getProfessorsList());
+  const [selectedProf, setSelectedProf] = useState<ProfessorAccount | null>(null);
+  
+  // Registration form states
+  const [isRegistering, setIsRegistering] = useState(false);
+  const [regName, setRegName] = useState('');
+  const [regUser, setRegUser] = useState('');
+  const [regPass, setRegPass] = useState('');
+
   const [teacherName, setTeacherName] = useState<string>(() => localStorage.getItem('portal_teacher_name') || '');
   const [isAuthEnabled, setIsAuthEnabled] = useState<boolean>(() => localStorage.getItem('portal_auth_enabled') === 'true');
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
@@ -63,26 +140,105 @@ export default function App() {
   const handleLogout = () => {
     sessionStorage.removeItem('portal_is_authenticated');
     localStorage.removeItem('portal_is_authenticated_persistent');
+    setSelectedProf(null);
     setIsAuthenticated(false);
   };
 
   const handleLoginSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const storedUser = localStorage.getItem('portal_username') || 'professor';
-    const storedPass = localStorage.getItem('portal_password') || '123456';
+    const matchingProf = selectedProf || professors.find(p => p.username.toLowerCase() === loginUser.trim().toLowerCase());
 
-    if (loginUser.trim() === storedUser && loginPass === storedPass) {
-      if (rememberMe) {
-        localStorage.setItem('portal_is_authenticated_persistent', 'true');
+    if (matchingProf) {
+      if (loginPass === matchingProf.password) {
+        localStorage.setItem('portal_active_user', matchingProf.username);
+        localStorage.setItem('portal_active_user_db', matchingProf.dbName);
+        localStorage.setItem('portal_teacher_name', matchingProf.teacherName);
+        localStorage.setItem('portal_username', matchingProf.username);
+        localStorage.setItem('portal_password', matchingProf.password);
+        localStorage.setItem('portal_auth_enabled', matchingProf.authEnabled ? 'true' : 'false');
+        localStorage.setItem('portal_password_hint', matchingProf.passwordHint || '');
+        localStorage.setItem('portal_security_question', matchingProf.securityQuestion || '');
+        localStorage.setItem('portal_security_answer', matchingProf.securityAnswer || '');
+
+        if (rememberMe) {
+          localStorage.setItem('portal_is_authenticated_persistent', 'true');
+        } else {
+          sessionStorage.setItem('portal_is_authenticated', 'true');
+        }
+        setLoginError('');
+        setIsAuthenticated(true);
+        setTeacherName(matchingProf.teacherName);
+        setIsAuthEnabled(matchingProf.authEnabled);
+        
+        window.location.reload();
       } else {
-        sessionStorage.setItem('portal_is_authenticated', 'true');
+        setLoginError('Senha incorreta. Tente novamente.');
       }
-      setLoginError('');
-      setIsAuthenticated(true);
     } else {
-      setLoginError('Usuário ou senha incorretos. Tente novamente.');
+      setLoginError('Usuário não encontrado.');
     }
   };
+
+  const handleRegisterSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmedUser = regUser.trim().toLowerCase();
+    const trimmedName = regName.trim();
+
+    if (!trimmedName || !trimmedUser || !regPass) {
+      setLoginError('Preencha todos os campos.');
+      return;
+    }
+
+    if (proforsMatch(trimmedUser)) {
+      setLoginError('Este usuário já está cadastrado.');
+      return;
+    }
+
+    const newProf: ProfessorAccount = {
+      username: trimmedUser,
+      password: regPass,
+      teacherName: trimmedName,
+      dbName: `TeacherDatabase_${trimmedUser}`,
+      authEnabled: true,
+      passwordHint: '',
+      securityQuestion: '',
+      securityAnswer: ''
+    };
+
+    const updatedList = [...professors, newProf];
+    localStorage.setItem('portal_professors_list', JSON.stringify(updatedList));
+    setProfessors(updatedList);
+
+    localStorage.setItem('portal_active_user', newProf.username);
+    localStorage.setItem('portal_active_user_db', newProf.dbName);
+    localStorage.setItem('portal_teacher_name', newProf.teacherName);
+    localStorage.setItem('portal_username', newProf.username);
+    localStorage.setItem('portal_password', newProf.password);
+    localStorage.setItem('portal_auth_enabled', 'true');
+    localStorage.setItem('portal_password_hint', '');
+    localStorage.setItem('portal_security_question', '');
+    localStorage.setItem('portal_security_answer', '');
+
+    if (rememberMe) {
+      localStorage.setItem('portal_is_authenticated_persistent', 'true');
+    } else {
+      sessionStorage.setItem('portal_is_authenticated', 'true');
+    }
+
+    setIsAuthenticated(true);
+    setTeacherName(newProf.teacherName);
+    setIsAuthEnabled(true);
+    setIsRegistering(false);
+    setRegName('');
+    setRegUser('');
+    setRegPass('');
+
+    window.location.reload();
+  };
+
+  function proforsMatch(user: string) {
+    return professors.some(p => p.username.toLowerCase() === user);
+  }
 
   const handleOpenRecovery = () => {
     setIsRecoveryOpen(true);
@@ -491,53 +647,126 @@ export default function App() {
                 </div>
               )}
             </div>
-          ) : (
-            /* Login Card */
-            <div className="bg-zinc-900 border border-zinc-800 p-8 rounded-3xl shadow-2xl shadow-black/50 space-y-6">
-              {teacherName && (
-                <div className="flex items-center gap-3 p-3.5 bg-zinc-950/40 border border-zinc-850 rounded-2xl">
-                  <div className="w-10 h-10 bg-zinc-800 rounded-xl flex items-center justify-center text-zinc-300 shrink-0">
-                    <User className="w-5 h-5 text-blue-400" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <span className="text-[10px] text-zinc-500 font-bold uppercase block tracking-wider">Professor</span>
-                    <span className="text-sm font-semibold text-zinc-200 block truncate">{teacherName}</span>
-                  </div>
+          ) : isRegistering ? (
+            /* Registration Card */
+            <div className="bg-zinc-900 border border-zinc-800 p-8 rounded-3xl shadow-2xl shadow-black/50 space-y-6 w-full max-w-sm">
+              <div>
+                <h3 className="text-white font-bold text-base flex items-center gap-2">
+                  <User className="w-5 h-5 text-blue-400" /> Cadastrar Novo Professor
+                </h3>
+                <p className="text-xs text-zinc-500 mt-1">Crie um perfil individual com seu próprio banco de dados privado</p>
+              </div>
+
+              <form onSubmit={handleRegisterSubmit} className="space-y-4">
+                {/* Full Name */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-zinc-400 block">Nome Completo do Professor</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Ex: Prof. Elionice Souza"
+                    value={regName}
+                    onChange={(e) => setRegName(e.target.value)}
+                    className="bg-zinc-950 border border-zinc-800 text-zinc-200 text-xs rounded-xl px-4 py-3 w-full focus:ring-1 focus:ring-blue-500 focus:outline-none placeholder-zinc-650 transition"
+                  />
                 </div>
-              )}
+
+                {/* Username */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-zinc-400 block">Usuário de Acesso (Login)</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Ex: elionice"
+                    value={regUser}
+                    onChange={(e) => setRegUser(e.target.value.toLowerCase().replace(/[^a-z0-9]/g, ''))}
+                    className="bg-zinc-950 border border-zinc-800 text-zinc-200 text-xs rounded-xl px-4 py-3 w-full focus:ring-1 focus:ring-blue-500 focus:outline-none placeholder-zinc-650 font-mono transition"
+                  />
+                </div>
+
+                {/* Password */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-zinc-400 block">Senha de Acesso</label>
+                  <input
+                    type="password"
+                    required
+                    placeholder="Mínimo de 4 dígitos"
+                    value={regPass}
+                    onChange={(e) => setRegPass(e.target.value)}
+                    className="bg-zinc-950 border border-zinc-800 text-zinc-200 text-xs rounded-xl px-4 py-3 w-full focus:ring-1 focus:ring-blue-500 focus:outline-none placeholder-zinc-650 transition"
+                  />
+                </div>
+
+                {/* Error Alert */}
+                {loginError && (
+                  <div className="p-3 bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs rounded-xl flex items-center gap-2 animate-shake">
+                    <div className="w-1.5 h-1.5 bg-rose-500 rounded-full shrink-0" />
+                    <span>{loginError}</span>
+                  </div>
+                )}
+
+                {/* Action Buttons */}
+                <div className="flex gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsRegistering(false);
+                      setLoginError('');
+                    }}
+                    className="flex-1 py-3 bg-zinc-800 hover:bg-zinc-750 text-zinc-300 rounded-xl text-xs font-semibold transition cursor-pointer"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    className="flex-1 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-lg shadow-blue-500/10"
+                  >
+                    Criar Perfil
+                  </button>
+                </div>
+              </form>
+            </div>
+          ) : selectedProf ? (
+            /* Password Card for Selected Profile */
+            <div className="bg-zinc-900 border border-zinc-800 p-8 rounded-3xl shadow-2xl shadow-black/50 space-y-6 w-full max-w-sm">
+              {/* Back Button */}
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedProf(null);
+                  setLoginError('');
+                }}
+                className="inline-flex items-center gap-1.5 text-xs text-zinc-400 hover:text-white transition cursor-pointer"
+              >
+                ← Escolher outro perfil
+              </button>
+
+              {/* Profile display */}
+              <div className="flex items-center gap-3.5 p-3.5 bg-zinc-950/40 border border-zinc-850 rounded-2xl">
+                <div className={`w-12 h-12 rounded-xl bg-gradient-to-tr ${getGradientForName(selectedProf.teacherName)} flex items-center justify-center text-white text-base font-black shrink-0`}>
+                  {selectedProf.teacherName.trim().substring(0, 2).toUpperCase() || 'P'}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <span className="text-[10px] text-zinc-500 font-bold uppercase block tracking-wider">Professor Selecionado</span>
+                  <span className="text-sm font-semibold text-zinc-200 block truncate">{selectedProf.teacherName}</span>
+                  <span className="text-[10px] text-zinc-600 font-mono">@{selectedProf.username}</span>
+                </div>
+              </div>
 
               <form onSubmit={handleLoginSubmit} className="space-y-4">
-                {/* Username field */}
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-zinc-400 block">Usuário</label>
-                  <div className="relative">
-                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-500">
-                      <User className="w-4 h-4" />
-                    </span>
-                    <input
-                      id="login-username-input"
-                      type="text"
-                      required
-                      placeholder="Seu usuário"
-                      value={loginUser}
-                      onChange={(e) => setLoginUser(e.target.value)}
-                      className="bg-zinc-950 border border-zinc-800 text-zinc-200 text-xs rounded-xl pl-10 pr-4 py-3 w-full focus:ring-1 focus:ring-blue-500 focus:outline-none placeholder-zinc-600 transition"
-                    />
-                  </div>
-                </div>
-
                 {/* Password field */}
                 <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-zinc-400 block">Senha</label>
+                  <label className="text-xs font-semibold text-zinc-400 block">Sua Senha de Acesso</label>
                   <div className="relative">
-                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-550">
-                      <Key className="w-4 h-4 text-zinc-500" />
+                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-500">
+                      <Key className="w-4 h-4" />
                     </span>
                     <input
                       id="login-password-input"
                       type={showLoginPass ? 'text' : 'password'}
                       required
-                      placeholder="Sua senha secreta"
+                      autoFocus
+                      placeholder="Digite sua senha"
                       value={loginPass}
                       onChange={(e) => setLoginPass(e.target.value)}
                       className="bg-zinc-950 border border-zinc-800 text-zinc-200 text-xs rounded-xl pl-10 pr-10 py-3 w-full focus:ring-1 focus:ring-blue-500 focus:outline-none placeholder-zinc-600 transition"
@@ -545,7 +774,7 @@ export default function App() {
                     <button
                       type="button"
                       onClick={() => setShowLoginPass(!showLoginPass)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-550 hover:text-zinc-300 cursor-pointer"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300 cursor-pointer"
                     >
                       {showLoginPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
@@ -554,7 +783,7 @@ export default function App() {
 
                 {/* Error Alert */}
                 {loginError && (
-                  <div className="p-3 bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs rounded-xl flex items-center gap-2">
+                  <div className="p-3 bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs rounded-xl flex items-center gap-2 animate-shake">
                     <div className="w-1.5 h-1.5 bg-rose-500 rounded-full shrink-0" />
                     <span>{loginError}</span>
                   </div>
@@ -580,7 +809,7 @@ export default function App() {
                   type="submit"
                   className="w-full py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-lg shadow-blue-500/10 cursor-pointer"
                 >
-                  <Lock className="w-4 h-4" /> Entrar no Sistema
+                  <Lock className="w-4 h-4" /> Acessar Diário
                 </button>
 
                 {/* Recovery Option */}
@@ -594,6 +823,66 @@ export default function App() {
                   </button>
                 </div>
               </form>
+            </div>
+          ) : (
+            /* Profile Chooser Card (Default) */
+            <div className="bg-zinc-900 border border-zinc-800 p-8 rounded-3xl shadow-2xl shadow-black/50 space-y-6 w-full max-w-sm text-center">
+              <div>
+                <h3 className="text-white font-bold text-lg">Quem está acessando?</h3>
+                <p className="text-xs text-zinc-500 mt-1">Selecione o seu perfil para entrar no seu diário de classe</p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 py-1">
+                {professors.map((p) => {
+                  const initials = p.teacherName.trim().substring(0, 2).toUpperCase() || 'P';
+                  const gradient = getGradientForName(p.teacherName);
+                  return (
+                    <button
+                      key={p.username}
+                      type="button"
+                      onClick={() => {
+                        setSelectedProf(p);
+                        setLoginUser(p.username);
+                        setLoginPass('');
+                        setLoginError('');
+                      }}
+                      className="group flex flex-col items-center gap-2 p-3.5 bg-zinc-950/40 hover:bg-zinc-950 border border-zinc-850 hover:border-blue-500/50 rounded-2xl transition duration-200 cursor-pointer min-w-0"
+                    >
+                      <div className={`w-14 h-14 rounded-2xl bg-gradient-to-tr ${gradient} flex items-center justify-center text-white text-lg font-black group-hover:scale-105 transition duration-200 shrink-0`}>
+                        {initials}
+                      </div>
+                      <span className="text-xs font-bold text-zinc-300 group-hover:text-white truncate max-w-full block mt-1">
+                        {p.teacherName}
+                      </span>
+                      <span className="text-[10px] text-zinc-600 font-mono truncate max-w-full block">
+                        @{p.username}
+                      </span>
+                    </button>
+                  );
+                })}
+
+                {/* Add new professor card */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsRegistering(true);
+                    setLoginError('');
+                  }}
+                  className="group flex flex-col items-center justify-center gap-2 p-3.5 bg-zinc-950/20 hover:bg-zinc-950 border border-dashed border-zinc-800 hover:border-blue-500/50 rounded-2xl transition duration-200 cursor-pointer min-h-[114px]"
+                >
+                  <div className="w-9 h-9 rounded-full bg-zinc-900 border border-zinc-800 group-hover:border-blue-500/50 flex items-center justify-center text-zinc-400 group-hover:text-blue-400 transition duration-200 shrink-0">
+                    <Plus className="w-4 h-4" />
+                  </div>
+                  <span className="text-xs font-bold text-zinc-500 group-hover:text-blue-400 transition duration-200">
+                    Adicionar Perfil
+                  </span>
+                </button>
+              </div>
+
+              {/* Minimal offline note */}
+              <div className="text-[10px] text-zinc-650 pt-3 border-t border-zinc-850 leading-relaxed text-zinc-500">
+                Cada professor possui um banco de dados totalmente isolado e armazenado com segurança local neste navegador.
+              </div>
             </div>
           )}
 

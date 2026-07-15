@@ -633,8 +633,26 @@ export default function TabFSettings({ teacherName, setTeacherName, onSecuritySa
 
   const handleSaveProfile = (e: FormEvent) => {
     e.preventDefault();
-    localStorage.setItem('portal_teacher_name', profileName.trim());
-    setTeacherName(profileName.trim());
+    const updatedName = profileName.trim();
+    localStorage.setItem('portal_teacher_name', updatedName);
+    setTeacherName(updatedName);
+
+    // Sync to professors list
+    const activeUser = localStorage.getItem('portal_active_user') || 'professor';
+    const listStr = localStorage.getItem('portal_professors_list');
+    if (listStr) {
+      try {
+        const list = JSON.parse(listStr);
+        const index = list.findIndex((p: any) => p.username === activeUser);
+        if (index !== -1) {
+          list[index].teacherName = updatedName;
+          localStorage.setItem('portal_professors_list', JSON.stringify(list));
+        }
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
     setAlertDialog({
       isOpen: true,
       title: 'Sucesso',
@@ -660,7 +678,32 @@ export default function TabFSettings({ teacherName, setTeacherName, onSecuritySa
       });
       return;
     }
-    localStorage.setItem('portal_username', portalUsername.trim());
+
+    const activeUser = localStorage.getItem('portal_active_user') || 'professor';
+    const newUsername = portalUsername.trim().toLowerCase();
+
+    // Sync to list
+    const listStr = localStorage.getItem('portal_professors_list');
+    if (listStr) {
+      try {
+        const list = JSON.parse(listStr);
+        const index = list.findIndex((p: any) => p.username === activeUser);
+        if (index !== -1) {
+          list[index].username = newUsername;
+          list[index].password = portalPassword;
+          list[index].authEnabled = portalAuthEnabled;
+          list[index].passwordHint = portalPasswordHint.trim();
+          list[index].securityQuestion = portalSecurityQuestion.trim();
+          list[index].securityAnswer = portalSecurityAnswer.trim();
+          localStorage.setItem('portal_professors_list', JSON.stringify(list));
+        }
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    localStorage.setItem('portal_active_user', newUsername);
+    localStorage.setItem('portal_username', newUsername);
     localStorage.setItem('portal_password', portalPassword);
     localStorage.setItem('portal_auth_enabled', portalAuthEnabled ? 'true' : 'false');
     localStorage.setItem('portal_password_hint', portalPasswordHint.trim());
