@@ -15,7 +15,7 @@ import {
   VistoRankingScore,
   ExtraGrade
 } from './types';
-import { syncSingleRecord } from './firebase';
+import { syncSingleRecord, pushTeacherDataToCloud } from './firebase';
 
 export let isCloudSyncDisabled = false;
 export function setCloudSyncDisabled(val: boolean) {
@@ -68,12 +68,12 @@ export class TeacherDatabase extends Dexie {
     tablesToSync.forEach(tableName => {
       const table = this.table(tableName);
 
-      table.hook('creating', (primKey, obj) => {
+      table.hook('creating', function(primKey, obj) {
         const activeUser = localStorage.getItem('portal_active_user');
         if (activeUser && !isCloudSyncDisabled && !(window as any).isCloudSyncDisabled) {
-          setTimeout(() => {
-            syncSingleRecord(activeUser, tableName, primKey as any, obj, 'set');
-          }, 50);
+          this.onsuccess = function(actualKey) {
+            syncSingleRecord(activeUser, tableName, actualKey as any, obj, 'set');
+          };
         }
       });
 
@@ -319,7 +319,6 @@ export async function seedDatabase() {
   const activeUser = localStorage.getItem('portal_active_user');
   if (activeUser) {
     try {
-      const { pushTeacherDataToCloud } = await import('./firebase');
       await pushTeacherDataToCloud(activeUser, db);
     } catch (e) {
       console.error('Error during initial cloud database upload after seed:', e);

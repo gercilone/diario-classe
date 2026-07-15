@@ -3,6 +3,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { db, seedDatabase, setCloudSyncDisabled } from '../db';
 import { School, Class, Subject, Student, SubjectWorkload, WeeklySchedule } from '../types';
 import { Plus, Trash2, Edit2, X, Import, Download, Upload, Calendar, Clock, BookOpen, School as SchoolIcon, Users, Settings, Database, Check, AlertTriangle, Sparkles, Save, User, Lock, Shield, Eye, EyeOff, Cloud, CloudUpload, CloudDownload } from 'lucide-react';
+import { pushTeacherDataToCloud, pullTeacherDataFromCloud } from '../firebase';
 
 interface TabFSettingsProps {
   teacherName: string;
@@ -493,7 +494,6 @@ export default function TabFSettings({ teacherName, setTeacherName, onSecuritySa
 
     setIsSyncingCloud(true);
     try {
-      const { pushTeacherDataToCloud } = await import('../firebase');
       const success = await pushTeacherDataToCloud(activeUser, db);
       if (success) {
         setAlertDialog({
@@ -530,7 +530,6 @@ export default function TabFSettings({ teacherName, setTeacherName, onSecuritySa
         setConfirmDialog(null);
         setIsSyncingCloud(true);
         try {
-          const { pullTeacherDataFromCloud } = await import('../firebase');
           const success = await pullTeacherDataFromCloud(activeUser, db);
           if (success) {
             setAlertDialog({

@@ -10,26 +10,29 @@ import {
 } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
 
-// Helper to remove any 'undefined' fields recursively so Firestore never crashes
+// Helper to remove any 'undefined' or un-serializable fields recursively so Firestore never crashes
 export function cleanDataForFirestore(obj: any): any {
   if (obj === null || obj === undefined) {
     return null;
   }
+  if (obj instanceof Date) {
+    return obj;
+  }
   if (Array.isArray(obj)) {
-    return obj.map(item => cleanDataForFirestore(item));
+    return obj.map(item => cleanDataForFirestore(item)).filter(item => item !== undefined);
   }
   if (typeof obj === 'object') {
-    if (obj instanceof Date) {
-      return obj;
-    }
     const cleaned: any = {};
     for (const key of Object.keys(obj)) {
       const val = obj[key];
-      if (val !== undefined) {
+      if (val !== undefined && typeof val !== 'function' && typeof val !== 'symbol') {
         cleaned[key] = cleanDataForFirestore(val);
       }
     }
     return cleaned;
+  }
+  if (typeof obj === 'function' || typeof obj === 'symbol') {
+    return null;
   }
   return obj;
 }

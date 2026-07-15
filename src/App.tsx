@@ -10,6 +10,16 @@ import TabEReports from './components/TabE_Reports';
 import TabFSettings from './components/TabF_Settings';
 import { FileText, CheckSquare, Trophy, Calendar, FileBarChart2, Settings, Sparkles, Lock, User, Eye, EyeOff, LogOut, Key, AlertTriangle, Plus, ShieldAlert, Shield, Search, UserPlus, Trash2, ArrowLeft, Check, LogIn, Users, Pencil, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import {
+  deleteProfessorFromCloud,
+  deleteCoordinatorFromCloud,
+  saveProfessorToCloud,
+  saveCoordinatorToCloud,
+  syncCoordinatorsListInCloud,
+  syncProfessorsListInCloud,
+  pullTeacherDataFromCloud,
+  pushTeacherDataToCloud
+} from './firebase';
 
 type TabKey = 'attendance' | 'grades' | 'vistos' | 'gamification' | 'reports' | 'settings';
 
@@ -468,8 +478,6 @@ export default function App() {
       return;
     }
 
-    const { deleteProfessorFromCloud, deleteCoordinatorFromCloud, saveProfessorToCloud, saveCoordinatorToCloud } = await import('./firebase');
-
     if (editingAcc) {
       const oldUsername = editingAcc.username.toLowerCase();
       const newUsername = username.toLowerCase();
@@ -624,8 +632,6 @@ export default function App() {
     const confirmDeletion = window.confirm(`Deseja realmente excluir permanentemente a conta de @${usernameToDelete}?`);
     if (!confirmDeletion) return;
 
-    const { deleteProfessorFromCloud, deleteCoordinatorFromCloud } = await import('./firebase');
-
     if (roleToDelete === 'teacher') {
       try {
         await deleteProfessorFromCloud(usernameToDelete);
@@ -735,7 +741,6 @@ export default function App() {
     const initDb = async () => {
       // Sync coordinator profiles list from the cloud on mount
       try {
-        const { syncCoordinatorsListInCloud } = await import('./firebase');
         const updatedList = await syncCoordinatorsListInCloud();
         if (updatedList && updatedList.length > 0) {
           setCoordinators(updatedList);
@@ -746,7 +751,6 @@ export default function App() {
 
       // Sync professor profiles list from the cloud on mount
       try {
-        const { syncProfessorsListInCloud } = await import('./firebase');
         const updatedList = await syncProfessorsListInCloud();
         if (updatedList && updatedList.length > 0) {
           setProfessors(updatedList);
@@ -770,7 +774,6 @@ export default function App() {
             setIsInitialSyncing(true);
             setSyncStatusMessage(`Sincronizando com a Nuvem... Buscando diário de classe de @${activeUser}...`);
             
-            const { pullTeacherDataFromCloud, pushTeacherDataToCloud } = await import('./firebase');
             await pullTeacherDataFromCloud(activeUser, db);
 
             if (inspecting && needsInspectPull) {
