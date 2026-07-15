@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db';
 import { Student, BimonthlyGrade, AssignmentDescription, ExtraGrade } from '../types';
-import { Edit2, Save, Info, AlertTriangle, Check, RefreshCw } from 'lucide-react';
+import { Edit2, Save, Info, AlertTriangle, Check, RefreshCw, Download, Upload } from 'lucide-react';
+import { pushTeacherDataToCloud } from '../firebase';
 
 interface TabAGradesProps {
   schoolId: number | undefined;
@@ -16,6 +17,23 @@ export default function TabAGrades({ schoolId, classId, subjectId, bimonthly, is
   const [subTab, setSubTab] = useState<'bimonthly' | 'semester'>('bimonthly');
   const [editingDesc, setEditingDesc] = useState(false);
   const [tempDesc, setTempDesc] = useState({ t1: '', t2: '', t3: '', t4: '', t5: '' });
+
+  // Dialog States
+  const [alertDialog, setAlertDialog] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onClose?: () => void;
+  } | null>(null);
+
+  const [confirmDialog, setConfirmDialog] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    confirmText: string;
+    cancelText: string;
+    onConfirm: () => void;
+  } | null>(null);
 
   // Load students
   const students = useLiveQuery(async () => {
@@ -155,6 +173,235 @@ export default function TabAGrades({ schoolId, classId, subjectId, bimonthly, is
     } catch (err) {
       console.error('Error saving extra grade:', err);
     }
+  };
+
+  // EXPORTAR NOTAS BIMESTRAIS PARA CSV
+  const handleExportCSV = async () => {
+    try {
+      const classObj = await db.classes.get(Number(classId));
+      const subjectObj = await db.subjects.get(Number(subjectId));
+      
+      const className = classObj ? classObj.name : `Turma_${classId}`;
+      const subjectName = subjectObj ? subjectObj.name : `Disciplina_${subjectId}`;
+      
+      const headers = ['Nº', 'Nome do Aluno', 'T1', 'T2', 'T3', 'T4', 'T5', 'Prova'];
+      const csvLines = [headers.join(';')];
+
+      students.forEach((student) => {
+        const gradeRecord = grades.find((g) => g.studentId === student.id);
+        const t1 = gradeRecord?.t1 !== undefined ? gradeRecord.t1 : '';
+        const t2 = gradeRecord?.t2 !== undefined ? gradeRecord.t2 : '';
+        const t3 = gradeRecord?.t3 !== undefined ? gradeRecord.t3 : '';
+        const t4 = gradeRecord?.t4 !== undefined ? gradeRecord.t4 : '';
+        const t5 = gradeRecord?.t5 !== undefined ? gradeRecord.t5 : '';
+        const exam = gradeRecord?.exam !== undefined ? gradeRecord.exam : '';
+
+        const row = [
+          student.rollNumber,
+          student.name,
+          t1,
+          t2,
+          t3,
+          t4,
+          t5,
+          exam
+        ];
+        csvLines.push(row.join(';'));
+      });
+
+      // Inclui UTF-8 BOM para garantir acentos corretos no Excel em português
+      const csvContent = '\uFEFF' + csvLines.join('\r\n');
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      
+      const sanitizedClassName = className.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+      const sanitizedSubjectName = subjectName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+      link.download = `notas_${sanitizedClassName}_${sanitizedSubjectName}_${bimonthly}Bim.csv`;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Error exporting CSV:', err);
+      setAlertDialog({
+        isOpen: true,
+        title: 'Erro',
+        message: 'Ocorreu um erro ao exportar as notas para CSV.'
+      });
+    }
+  };
+
+  // IMPORTAR NOTAS BIMESTRAIS DE CSV
+  const handleImportCSV = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      try {
+        const text = event.target?.result as string;
+        const lines = text.split(/\r?\n/);
+        if (lines.length < 2) {
+          setAlertDialog({
+            isOpen: true,
+            title: 'Erro de Formato',
+            message: 'O arquivo CSV selecionado está vazio ou não possui registros.'
+          });
+          return;
+        }
+
+        let firstLine = lines[0].replace(/^\uFEFF/, '').trim();
+        const sep = firstLine.includes(';') ? ';' : ',';
+        const headers = firstLine.split(sep).map(h => h.trim().toLowerCase());
+
+        // Identifica os índices das colunas
+        const rollIdx = headers.findIndex(h => h.includes('nº') || h.includes('no') || h.includes('num'));
+        const nameIdx = headers.findIndex(h => h.includes('nome'));
+        const t1Idx = headers.indexOf('t1');
+        const t2Idx = headers.indexOf('t2');
+        const t3Idx = headers.indexOf('t3');
+        const t4Idx = headers.indexOf('t4');
+        const t5Idx = headers.indexOf('t5');
+        const examIdx = headers.findIndex(h => h.includes('prova') || h.includes('exam'));
+
+        const parseGradeValue = (valStr: string | undefined): number | undefined => {
+          if (!valStr) return undefined;
+          const trimmed = valStr.trim();
+          if (trimmed === '' || trimmed === '-') return undefined;
+          const parsed = parseFloat(trimmed.replace(',', '.'));
+          return isNaN(parsed) ? undefined : parsed;
+        };
+
+        const gradesToUpdate: {
+          studentId: number;
+          t1?: number;
+          t2?: number;
+          t3?: number;
+          t4?: number;
+          t5?: number;
+          exam?: number;
+        }[] = [];
+
+        for (let i = 1; i < lines.length; i++) {
+          const line = lines[i].trim();
+          if (!line) continue;
+          
+          const columns = line.split(sep).map(c => c.trim());
+          
+          let matchedStudent: Student | undefined = undefined;
+          
+          const rollVal = rollIdx !== -1 ? parseInt(columns[rollIdx], 10) : NaN;
+          const nameVal = nameIdx !== -1 ? columns[nameIdx] : '';
+
+          if (!isNaN(rollVal)) {
+            matchedStudent = students.find(s => s.rollNumber === rollVal);
+          }
+          if (!matchedStudent && nameVal) {
+            matchedStudent = students.find(s => s.name.trim().toLowerCase() === nameVal.toLowerCase());
+          }
+
+          if (matchedStudent && matchedStudent.id) {
+            const t1 = t1Idx !== -1 ? parseGradeValue(columns[t1Idx]) : undefined;
+            const t2 = t2Idx !== -1 ? parseGradeValue(columns[t2Idx]) : undefined;
+            const t3 = t3Idx !== -1 ? parseGradeValue(columns[t3Idx]) : undefined;
+            const t4 = t4Idx !== -1 ? parseGradeValue(columns[t4Idx]) : undefined;
+            const t5 = t5Idx !== -1 ? parseGradeValue(columns[t5Idx]) : undefined;
+            const exam = examIdx !== -1 ? parseGradeValue(columns[examIdx]) : undefined;
+
+            gradesToUpdate.push({
+              studentId: matchedStudent.id,
+              t1,
+              t2,
+              t3,
+              t4,
+              t5,
+              exam
+            });
+          }
+        }
+
+        if (gradesToUpdate.length === 0) {
+          setAlertDialog({
+            isOpen: true,
+            title: 'Nenhum Aluno Correspondido',
+            message: 'Não foi possível fazer a correspondência de nenhum aluno do CSV com os alunos cadastrados nesta turma. Verifique se os nomes ou números de chamada (Nº) estão idênticos.'
+          });
+          return;
+        }
+
+        setConfirmDialog({
+          isOpen: true,
+          title: 'Confirmar Importação de Notas',
+          message: `Deseja importar, restaurar e salvar as notas de ${gradesToUpdate.length} alunos correspondidos nesta turma para o ${bimonthly}º Bimestre? Qualquer nota existente do mesmo trabalho/prova no banco de dados local e na nuvem será substituída pelas novas do CSV.`,
+          confirmText: 'Importar Notas',
+          cancelText: 'Cancelar',
+          onConfirm: async () => {
+            setConfirmDialog(null);
+            
+            try {
+              await db.transaction('rw', [db.bimonthlyGrades], async () => {
+                for (const update of gradesToUpdate) {
+                  const existingGrade = grades.find(g => g.studentId === update.studentId);
+                  
+                  const updateData: Partial<BimonthlyGrade> = {};
+                  if (update.t1 !== undefined) updateData.t1 = update.t1;
+                  if (update.t2 !== undefined) updateData.t2 = update.t2;
+                  if (update.t3 !== undefined) updateData.t3 = update.t3;
+                  if (update.t4 !== undefined) updateData.t4 = update.t4;
+                  if (update.t5 !== undefined) updateData.t5 = update.t5;
+                  if (update.exam !== undefined) updateData.exam = update.exam;
+
+                  if (existingGrade && existingGrade.id) {
+                    await db.bimonthlyGrades.update(existingGrade.id, updateData);
+                  } else {
+                    await db.bimonthlyGrades.add({
+                      studentId: update.studentId,
+                      bimonthly,
+                      subjectId: Number(subjectId),
+                      ...updateData
+                    });
+                  }
+                }
+              });
+
+              // Sincronizar as alterações com o Firebase Firestore se logado
+              const activeUser = localStorage.getItem('portal_active_user');
+              if (activeUser) {
+                try {
+                  await pushTeacherDataToCloud(activeUser, db);
+                } catch (cloudErr) {
+                  console.error('Failed to sync CSV imported grades to Cloud:', cloudErr);
+                }
+              }
+
+              setAlertDialog({
+                isOpen: true,
+                title: 'Importação Concluída',
+                message: `As notas de ${gradesToUpdate.length} alunos foram importadas, restauradas e sincronizadas com sucesso tanto localmente quanto na nuvem!`
+              });
+            } catch (saveErr) {
+              console.error('Error saving imported grades:', saveErr);
+              setAlertDialog({
+                isOpen: true,
+                title: 'Erro de Banco de Dados',
+                message: 'Ocorreu um erro ao salvar as notas importadas no banco de dados.'
+              });
+            }
+          }
+        });
+
+      } catch (parseErr) {
+        console.error('Error parsing CSV:', parseErr);
+        setAlertDialog({
+          isOpen: true,
+          title: 'Erro de Leitura',
+          message: 'Falha ao analisar o arquivo CSV. Certifique-se de que é um arquivo CSV separado por vírgulas ou ponto-e-vírgula válido.'
+        });
+      }
+    };
+
+    reader.readAsText(file, 'utf-8');
+    e.target.value = ''; // limpa input
   };
 
   // Keyboard navigation by column (not by row)
@@ -298,14 +545,42 @@ export default function TabAGrades({ schoolId, classId, subjectId, bimonthly, is
             </div>
 
             {!isReadOnly && (
-              <button
-                id="edit-descriptors-btn"
-                onClick={() => setEditingDesc(!editingDesc)}
-                className="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-lg text-xs font-semibold flex items-center gap-1.5 border border-zinc-750 transition"
-              >
-                <Edit2 className="w-3.5 h-3.5 text-blue-400" />
-                {editingDesc ? 'Fechar Editor' : 'Personalizar Atividades (T1 a T5)'}
-              </button>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  id="export-csv-btn"
+                  onClick={handleExportCSV}
+                  className="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-lg text-xs font-semibold flex items-center gap-1.5 border border-zinc-750 transition cursor-pointer"
+                  title="Exportar notas da turma para planilha Excel/CSV"
+                >
+                  <Download className="w-3.5 h-3.5 text-emerald-400" />
+                  Exportar Notas (CSV)
+                </button>
+
+                <label
+                  id="import-csv-label"
+                  className="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-lg text-xs font-semibold flex items-center gap-1.5 border border-zinc-750 transition cursor-pointer"
+                  title="Importar notas de uma planilha Excel/CSV"
+                >
+                  <Upload className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Importar Notas (CSV)</span>
+                  <input
+                    id="import-csv-file-input"
+                    type="file"
+                    accept=".csv"
+                    onChange={handleImportCSV}
+                    className="hidden"
+                  />
+                </label>
+
+                <button
+                  id="edit-descriptors-btn"
+                  onClick={() => setEditingDesc(!editingDesc)}
+                  className="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-lg text-xs font-semibold flex items-center gap-1.5 border border-zinc-750 transition cursor-pointer"
+                >
+                  <Edit2 className="w-3.5 h-3.5 text-blue-400" />
+                  {editingDesc ? 'Fechar Editor' : 'Atividades (T1-T5)'}
+                </button>
+              </div>
             )}
           </div>
 
@@ -570,6 +845,66 @@ export default function TabAGrades({ schoolId, classId, subjectId, bimonthly, is
                 )}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {/* Diálogo de Confirmação Customizado */}
+      {confirmDialog && confirmDialog.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl p-6 space-y-4 animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center gap-3 text-amber-500">
+              <AlertTriangle className="w-6 h-6 shrink-0 text-amber-500" />
+              <h3 className="text-white font-bold text-base">{confirmDialog.title}</h3>
+            </div>
+            <p className="text-zinc-300 text-xs leading-relaxed">
+              {confirmDialog.message}
+            </p>
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setConfirmDialog(null)}
+                className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-xl text-xs font-semibold transition cursor-pointer"
+              >
+                {confirmDialog.cancelText || 'Cancelar'}
+              </button>
+              <button
+                type="button"
+                onClick={confirmDialog.onConfirm}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-semibold transition cursor-pointer shadow-lg shadow-blue-900/20"
+              >
+                {confirmDialog.confirmText || 'Confirmar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Diálogo de Alerta Customizado */}
+      {alertDialog && alertDialog.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl p-6 space-y-4 animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center gap-3 text-emerald-400">
+              <Check className="w-5 h-5 shrink-0 bg-emerald-500/10 p-1 rounded-full text-emerald-400" />
+              <h3 className="text-white font-bold text-base">{alertDialog.title}</h3>
+            </div>
+            <p className="text-zinc-300 text-xs leading-relaxed">
+              {alertDialog.message}
+            </p>
+            <div className="flex justify-end pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  if (alertDialog.onClose) {
+                    alertDialog.onClose();
+                  }
+                  setAlertDialog(null);
+                }}
+                className="px-5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-semibold transition cursor-pointer shadow-lg shadow-blue-900/20"
+              >
+                Ok
+              </button>
+            </div>
           </div>
         </div>
       )}
