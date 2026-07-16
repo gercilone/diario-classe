@@ -505,3 +505,103 @@ export async function deleteGlobalStudent(studentId: string): Promise<void> {
     console.error('Error deleting global student:', error);
   }
 }
+
+// 5. GLOBAL SHARED SUBJECTS & WORKLOADS (Managed by Coordinator/Admin, pulled by teachers)
+
+export interface GlobalSubject {
+  id: string;
+  name: string;
+}
+
+export interface GlobalWorkload {
+  id: string;
+  classId: string;
+  subjectId: string;
+  totalLessons: number;
+}
+
+export async function getGlobalSubjects(): Promise<GlobalSubject[]> {
+  const dbInstance = getFirestoreInstance();
+  if (!dbInstance) return [];
+  try {
+    const colRef = collection(dbInstance, 'global_subjects');
+    const snapshot = await getDocs(colRef);
+    const subjects: GlobalSubject[] = [];
+    snapshot.forEach((doc) => {
+      subjects.push({ ...doc.data() as GlobalSubject, id: doc.id });
+    });
+    return subjects.sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+  } catch (error) {
+    console.error('Error getting global subjects:', error);
+    return [];
+  }
+}
+
+export async function saveGlobalSubject(subject: GlobalSubject): Promise<void> {
+  const dbInstance = getFirestoreInstance();
+  if (!dbInstance) return;
+  try {
+    const docRef = doc(dbInstance, 'global_subjects', subject.id);
+    await setDoc(docRef, cleanDataForFirestore(subject));
+  } catch (error) {
+    console.error('Error saving global subject:', error);
+  }
+}
+
+export async function deleteGlobalSubject(subjectId: string): Promise<void> {
+  const dbInstance = getFirestoreInstance();
+  if (!dbInstance) return;
+  try {
+    await deleteDoc(doc(dbInstance, 'global_subjects', subjectId));
+    
+    // Also cascade delete workloads associated with this subject
+    const workloadsCol = collection(dbInstance, 'global_workloads');
+    const workloadsSnapshot = await getDocs(workloadsCol);
+    for (const d of workloadsSnapshot.docs) {
+      const wlData = d.data();
+      if (wlData.subjectId === subjectId) {
+        await deleteDoc(doc(dbInstance, 'global_workloads', d.id));
+      }
+    }
+  } catch (error) {
+    console.error('Error deleting global subject:', error);
+  }
+}
+
+export async function getGlobalWorkloads(): Promise<GlobalWorkload[]> {
+  const dbInstance = getFirestoreInstance();
+  if (!dbInstance) return [];
+  try {
+    const colRef = collection(dbInstance, 'global_workloads');
+    const snapshot = await getDocs(colRef);
+    const workloads: GlobalWorkload[] = [];
+    snapshot.forEach((doc) => {
+      workloads.push({ ...doc.data() as GlobalWorkload, id: doc.id });
+    });
+    return workloads;
+  } catch (error) {
+    console.error('Error getting global workloads:', error);
+    return [];
+  }
+}
+
+export async function saveGlobalWorkload(workload: GlobalWorkload): Promise<void> {
+  const dbInstance = getFirestoreInstance();
+  if (!dbInstance) return;
+  try {
+    const docRef = doc(dbInstance, 'global_workloads', workload.id);
+    await setDoc(docRef, cleanDataForFirestore(workload));
+  } catch (error) {
+    console.error('Error saving global workload:', error);
+  }
+}
+
+export async function deleteGlobalWorkload(workloadId: string): Promise<void> {
+  const dbInstance = getFirestoreInstance();
+  if (!dbInstance) return;
+  try {
+    await deleteDoc(doc(dbInstance, 'global_workloads', workloadId));
+  } catch (error) {
+    console.error('Error deleting global workload:', error);
+  }
+}

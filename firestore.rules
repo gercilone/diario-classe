@@ -31,5 +31,11 @@ service cloud.firestore {
     match /global_students/{studentId} {
       allow read, write: if true;
     }
+    match /global_subjects/{subjectId} {
+      allow read, write: if true;
+    }
+    match /global_workloads/{workloadId} {
+      allow read, write: if true;
+    }
   }
 }

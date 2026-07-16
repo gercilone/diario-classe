@@ -3,7 +3,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { db, seedDatabase, setCloudSyncDisabled } from '../db';
 import { School, Class, Subject, Student, SubjectWorkload, WeeklySchedule, sortClasses } from '../types';
 import { Plus, Trash2, Edit2, X, Import, Download, Upload, Calendar, Clock, BookOpen, School as SchoolIcon, Users, Settings, Database, Check, AlertTriangle, Sparkles, Save, User, Lock, Shield, Eye, EyeOff, Cloud, CloudUpload, CloudDownload } from 'lucide-react';
-import { pushTeacherDataToCloud, pullTeacherDataFromCloud, getGlobalSchools, getGlobalClasses, getGlobalStudents } from '../firebase';
+import { pushTeacherDataToCloud, pullTeacherDataFromCloud, getGlobalSchools, getGlobalClasses, getGlobalStudents, getGlobalSubjects, getGlobalWorkloads } from '../firebase';
 
 interface TabFSettingsProps {
   teacherName: string;
@@ -93,6 +93,109 @@ export default function TabFSettings({ teacherName, setTeacherName, onSecuritySa
   const [loadingGlobals, setLoadingGlobals] = useState(false);
   const [selectedGlobalSchoolId, setSelectedGlobalSchoolId] = useState('');
   const [attachingClassId, setAttachingClassId] = useState<string | null>(null);
+
+  const [syncingSubjectsAndWorkloads, setSyncingSubjectsAndWorkloads] = useState(false);
+
+  const handleImportGlobalSubjectsAndWorkloads = async () => {
+    setSyncingSubjectsAndWorkloads(true);
+    try {
+      // 1. Fetch global subjects, workloads, classes, and schools
+      const globalSubs = await getGlobalSubjects();
+      const globalWls = await getGlobalWorkloads();
+      const globalCls = await getGlobalClasses();
+      const globalSchs = await getGlobalSchools();
+
+      if (globalSubs.length === 0) {
+        setAlertDialog({
+          isOpen: true,
+          title: 'Nenhuma Disciplina Encontrada',
+          message: 'Não há disciplinas cadastradas pela coordenação na nuvem ainda.'
+        });
+        return;
+      }
+
+      // 2. Fetch current local state of schools, classes, subjects
+      const localSchools = await db.schools.toArray();
+      const localClasses = await db.classes.toArray();
+      const localSubjects = await db.subjects.toArray();
+
+      // 3. Map global subjects to local subjects, creating missing ones
+      const subMapping: { [globalId: string]: number } = {}; // Maps globalSubjectId to localSubjectId
+
+      for (const gs of globalSubs) {
+        let localSub = localSubjects.find(s => s.name.toLowerCase() === gs.name.toLowerCase());
+        let localSubId: number;
+        if (localSub) {
+          localSubId = localSub.id!;
+        } else {
+          localSubId = await db.subjects.add({ name: gs.name });
+        }
+        subMapping[gs.id] = localSubId;
+      }
+
+      // 4. Map global workloads to local workloads
+      let importedWorkloadsCount = 0;
+
+      for (const gwl of globalWls) {
+        const gClass = globalCls.find(c => c.id === gwl.classId);
+        if (!gClass) continue;
+
+        const gSchool = globalSchs.find(s => s.id === gClass.schoolId);
+        if (!gSchool) continue;
+
+        // Find local school
+        const lSchool = localSchools.find(s => s.name.toLowerCase() === gSchool.name.toLowerCase());
+        if (!lSchool) continue;
+
+        // Find local class
+        const lClass = localClasses.find(c => c.name.toLowerCase() === gClass.name.toLowerCase() && c.schoolId === lSchool.id);
+        if (!lClass) continue;
+
+        // Find local subject ID
+        const lSubId = subMapping[gwl.subjectId];
+        if (!lSubId) continue;
+
+        // Check if workload already exists locally
+        const existingLocalWl = await db.subjectWorkloads
+          .where('classId')
+          .equals(lClass.id!)
+          .filter(w => w.subjectId === lSubId)
+          .first();
+
+        if (existingLocalWl) {
+          await db.subjectWorkloads.update(existingLocalWl.id!, { totalLessons: gwl.totalLessons });
+        } else {
+          await db.subjectWorkloads.add({
+            classId: lClass.id!,
+            subjectId: lSubId,
+            totalLessons: gwl.totalLessons
+          });
+        }
+        importedWorkloadsCount++;
+      }
+
+      // Force push teacher data to cloud to sync everything up
+      const activeUser = localStorage.getItem('portal_active_user');
+      if (activeUser) {
+        await pushTeacherDataToCloud(activeUser, db);
+      }
+
+      setAlertDialog({
+        isOpen: true,
+        title: 'Sincronização Concluída',
+        message: `As disciplinas e cargas horárias oficiais da coordenação foram importadas e atualizadas com sucesso! (${globalSubs.length} disciplinas mapeadas/atualizadas, ${importedWorkloadsCount} cargas horárias associadas às suas turmas locais).`
+      });
+    } catch (err) {
+      console.error('Error importing global subjects and workloads:', err);
+      setAlertDialog({
+        isOpen: true,
+        title: 'Erro na Importação',
+        message: 'Ocorreu um erro ao importar as disciplinas e cargas horárias globais.'
+      });
+    } finally {
+      setSyncingSubjectsAndWorkloads(false);
+    }
+  };
 
   const loadGlobalData = async () => {
     setLoadingGlobals(true);
@@ -1920,90 +2023,53 @@ export default function TabFSettings({ teacherName, setTeacherName, onSecuritySa
               </div>
             </div>
 
-            {/* Subjects Form */}
+            {/* Subjects Form - Coordination-controlled */}
             <div className="bg-zinc-900 border border-zinc-800 p-5 rounded-2xl space-y-4">
               <h3 className="text-white font-bold text-sm flex items-center gap-2">
-                <BookOpen className="w-4 h-4 text-blue-400" /> Cadastrar Disciplina
+                <BookOpen className="w-4 h-4 text-blue-400" /> Disciplinas Oficiais (Coordenação)
               </h3>
               
-              <form onSubmit={handleAddSubject} className="flex gap-2">
-                <input
-                  id="add-subject-input"
-                  type="text"
-                  required
-                  placeholder="Nome da Disciplina (Ex: Biologia)"
-                  value={newSubjectName}
-                  onChange={(e) => setNewSubjectName(e.target.value)}
-                  className="bg-zinc-950 border border-zinc-800 text-zinc-200 text-xs rounded-xl px-3 py-2 w-full focus:ring-1 focus:ring-blue-500 focus:outline-none"
-                />
+              <div className="bg-blue-950/30 border border-blue-900/50 p-4 rounded-xl space-y-3">
+                <p className="text-[11px] text-blue-300 leading-relaxed">
+                  As disciplinas e matérias oficiais são cadastradas exclusivamente pela coordenação pedagógica ou administração. 
+                  Clique no botão abaixo para puxar a grade curricular e as cargas horárias atualizadas da nuvem.
+                </p>
                 <button
-                  id="submit-subject-btn"
-                  type="submit"
-                  className="px-3 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold transition flex items-center gap-1 shrink-0 cursor-pointer"
+                  type="button"
+                  disabled={syncingSubjectsAndWorkloads}
+                  onClick={handleImportGlobalSubjectsAndWorkloads}
+                  className={`w-full py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer shadow-lg shadow-blue-500/10 ${
+                    syncingSubjectsAndWorkloads ? 'opacity-70 cursor-not-allowed animate-pulse' : ''
+                  }`}
                 >
-                  <Plus className="w-4 h-4" /> Cadastrar
+                  <Sparkles className="w-4 h-4 text-amber-400" />
+                  <span>
+                    {syncingSubjectsAndWorkloads 
+                      ? 'Importando e Sincronizando...' 
+                      : 'Sincronizar Disciplinas & Cargas da Coordenação'
+                    }
+                  </span>
                 </button>
-              </form>
+              </div>
 
-              {/* Subjects List */}
-              <div className="max-h-48 overflow-y-auto divide-y divide-zinc-800/60 bg-zinc-950/40 p-2.5 rounded-xl border border-zinc-800">
-                {subjects.length === 0 ? (
-                  <p className="text-[11px] text-zinc-500 text-center py-2">Nenhuma disciplina cadastrada.</p>
-                ) : (
-                  subjects.map((sub) => (
-                    <div key={sub.id} className="flex items-center justify-between py-1.5 text-xs text-zinc-300 gap-2">
-                      {editingSubjectId === sub.id ? (
-                        <div className="flex items-center gap-1.5 w-full">
-                          <input
-                            type="text"
-                            value={editingSubjectName}
-                            onChange={(e) => setEditingSubjectName(e.target.value)}
-                            className="bg-zinc-900 border border-zinc-750 text-zinc-200 text-[11px] rounded px-2 py-0.5 w-full focus:outline-none focus:ring-1 focus:ring-blue-500"
-                          />
-                          <button
-                            type="button"
-                            onClick={handleSaveEditSubject}
-                            className="text-emerald-400 hover:text-emerald-300 p-1 cursor-pointer shrink-0"
-                            title="Salvar"
-                          >
-                            <Check className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setEditingSubjectId(undefined)}
-                            className="text-zinc-400 hover:text-zinc-300 p-1 cursor-pointer shrink-0"
-                            title="Cancelar"
-                          >
-                            <X className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      ) : (
-                        <>
+              {/* Subjects List (Read-Only) */}
+              <div className="space-y-1">
+                <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider mb-2">Sua Grade de Disciplinas ({subjects.length})</p>
+                <div className="max-h-48 overflow-y-auto divide-y divide-zinc-800/60 bg-zinc-950/40 p-2.5 rounded-xl border border-zinc-800">
+                  {subjects.length === 0 ? (
+                    <p className="text-[11px] text-zinc-500 text-center py-4 italic">Nenhuma disciplina importada ainda. Clique em Sincronizar acima.</p>
+                  ) : (
+                    subjects.map((sub) => (
+                      <div key={sub.id} className="flex items-center justify-between py-2 text-xs text-zinc-300 gap-2">
+                        <div className="flex items-center gap-2 truncate pr-2">
+                          <Check className="w-3.5 h-3.5 text-blue-400 shrink-0" />
                           <span className="truncate font-medium">{sub.name}</span>
-                          <div className="flex items-center gap-1 shrink-0">
-                            <button
-                              type="button"
-                              onClick={() => handleStartEditSubject(sub)}
-                              className="text-zinc-500 hover:text-blue-400 p-1 cursor-pointer"
-                              title="Editar"
-                            >
-                              <Edit2 className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              id={`delete-subject-btn-${sub.id}`}
-                              type="button"
-                              onClick={() => handleDeleteSubject(sub.id!)}
-                              className="text-zinc-500 hover:text-rose-400 p-1 cursor-pointer"
-                              title="Excluir"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  ))
-                )}
+                        </div>
+                        <span className="text-[9px] bg-blue-500/10 border border-blue-500/20 text-blue-400 font-bold px-2 py-0.5 rounded-full uppercase">Oficial</span>
+                      </div>
+                    ))
+                  )}
+                </div>
               </div>
             </div>
 
@@ -2202,136 +2268,54 @@ export default function TabFSettings({ teacherName, setTeacherName, onSecuritySa
       {activeSubTab === 'grade' && (
         <div id="settings-grade-section" className="grid grid-cols-1 md:grid-cols-2 gap-6">
           
-          {/* Carga Horaria Form */}
+          {/* Carga Horaria Form - Coordination-controlled */}
           <div className="bg-zinc-900 border border-zinc-800 p-5 rounded-2xl space-y-4">
             <h3 className="text-white font-bold text-sm flex items-center gap-2">
-              <BookOpen className="w-4 h-4 text-sky-400" /> Configurar Cargas Horárias de Matérias
+              <BookOpen className="w-4 h-4 text-sky-400" /> Cargas Horárias Oficiais (Coordenação)
             </h3>
-            <p className="text-xs text-zinc-400">Determine o total de aulas planejadas para uma disciplina em uma determinada turma:</p>
-
-            <form onSubmit={handleAddWorkload} className="space-y-3 bg-zinc-950/20 p-3 rounded-xl border border-zinc-800">
-              <div className="grid grid-cols-2 gap-2">
-                <select
-                  id="add-workload-class-select"
-                  required
-                  value={selectedClassIdForWorkload || ''}
-                  onChange={(e) => setSelectedClassIdForWorkload(e.target.value ? parseInt(e.target.value) : undefined)}
-                  className="bg-zinc-950 border border-zinc-800 text-zinc-200 text-xs rounded-xl px-2.5 py-2 w-full focus:ring-1 focus:ring-blue-500 focus:outline-none cursor-pointer"
-                >
-                  <option value="" className="bg-zinc-950">Turma</option>
-                  {[...classes].sort(sortClasses).map((c) => {
-                    const sch = schools.find((s) => s.id === c.schoolId);
-                    return <option key={c.id} value={c.id} className="bg-zinc-950">{c.name} ({sch?.name.substring(0, 10)})</option>;
-                  })}
-                </select>
-
-                <select
-                  id="add-workload-subject-select"
-                  required
-                  value={selectedSubjectIdForWorkload || ''}
-                  onChange={(e) => setSelectedSubjectIdForWorkload(e.target.value ? parseInt(e.target.value) : undefined)}
-                  className="bg-zinc-950 border border-zinc-800 text-zinc-200 text-xs rounded-xl px-2.5 py-2 w-full focus:ring-1 focus:ring-blue-500 focus:outline-none cursor-pointer"
-                >
-                  <option value="" className="bg-zinc-950">Disciplina</option>
-                  {subjects.map((sub) => (
-                    <option key={sub.id} value={sub.id} className="bg-zinc-950">{sub.name}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-[10px] text-zinc-400 font-medium">Total de Aulas Planejadas no Ano (Carga Horária)</label>
-                <input
-                  id="add-workload-lessons-input"
-                  type="number"
-                  required
-                  value={workloadLessons}
-                  onChange={(e) => setWorkloadLessons(parseInt(e.target.value) || 0)}
-                  className="bg-zinc-950 border border-zinc-800 text-zinc-200 text-xs rounded-xl px-3 py-2 w-full focus:ring-1 focus:ring-blue-500 focus:outline-none"
-                />
-              </div>
-
+            
+            <div className="bg-sky-950/30 border border-sky-900/50 p-4 rounded-xl space-y-3">
+              <p className="text-[11px] text-sky-300 leading-relaxed">
+                O planejamento anual de cargas horárias (total de aulas para cada matéria e série) é definido exclusivamente pela coordenação. 
+                Sincronize com a nuvem para vincular automaticamente as cargas horárias corretas às suas turmas locais.
+              </p>
               <button
-                id="submit-workload-btn"
-                type="submit"
-                className="w-full py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer"
+                type="button"
+                disabled={syncingSubjectsAndWorkloads}
+                onClick={handleImportGlobalSubjectsAndWorkloads}
+                className={`w-full py-2.5 bg-sky-600 hover:bg-sky-500 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer shadow-lg shadow-sky-500/10 ${
+                  syncingSubjectsAndWorkloads ? 'opacity-70 cursor-not-allowed animate-pulse' : ''
+                }`}
               >
-                <Save className="w-4 h-4" /> Salvar Carga Horária
+                <Sparkles className="w-4 h-4 text-amber-400" />
+                <span>
+                  {syncingSubjectsAndWorkloads 
+                    ? 'Sincronizando...' 
+                    : 'Sincronizar Disciplinas & Cargas Globais'
+                  }
+                </span>
               </button>
-            </form>
+            </div>
 
-            {/* List current workloads */}
+            {/* List current workloads (Read-Only) */}
             <div className="space-y-2">
-              <p className="text-xs font-bold text-zinc-400 uppercase tracking-wider">Cargas Cadastradas</p>
-              <div className="max-h-52 overflow-y-auto divide-y divide-zinc-800/60 bg-zinc-950/40 p-2.5 rounded-xl border border-zinc-800">
+              <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider">Cargas Horárias Ativas no Diário ({workloads.length})</p>
+              <div className="max-h-64 overflow-y-auto divide-y divide-zinc-800/60 bg-zinc-950/40 p-2.5 rounded-xl border border-zinc-800">
                 {workloads.length === 0 ? (
-                  <p className="text-xs text-zinc-500 text-center py-2">Nenhuma carga cadastrada.</p>
+                  <p className="text-[11px] text-zinc-500 text-center py-4 italic">Nenhuma carga horária registrada ainda. Clique em Sincronizar acima.</p>
                 ) : (
                   workloads.map((wl) => {
                     const c = classes.find((cl) => cl.id === wl.classId);
                     const sub = subjects.find((s) => s.id === wl.subjectId);
                     return (
-                      <div key={wl.id} className="flex items-center justify-between py-2 text-xs text-zinc-300 gap-2">
-                        {editingWorkloadId === wl.id ? (
-                          <div className="flex items-center gap-1.5 w-full">
-                            <div className="text-left w-full truncate">
-                              <span className="font-semibold text-zinc-200 block truncate">{sub?.name || '-'}</span>
-                              <span className="text-[10px] text-zinc-500 block truncate">Turma: {c?.name || '-'}</span>
-                            </div>
-                            <input
-                              type="number"
-                              value={editingWorkloadLessons}
-                              onChange={(e) => setEditingWorkloadLessons(parseInt(e.target.value) || 0)}
-                              className="bg-zinc-900 border border-zinc-750 text-zinc-200 text-xs rounded px-1.5 py-0.5 w-16 text-center focus:outline-none focus:ring-1 focus:ring-blue-500"
-                              placeholder="h/aula"
-                            />
-                            <button
-                              type="button"
-                              onClick={handleSaveEditWorkload}
-                              className="text-emerald-400 hover:text-emerald-300 p-1 cursor-pointer shrink-0"
-                              title="Salvar"
-                            >
-                              <Check className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setEditingWorkloadId(undefined)}
-                              className="text-zinc-400 hover:text-zinc-300 p-1 cursor-pointer shrink-0"
-                              title="Cancelar"
-                            >
-                              <X className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        ) : (
-                          <>
-                            <div>
-                              <span className="font-semibold text-zinc-200">{sub?.name || '-'}</span>
-                              <span className="text-[10px] text-zinc-550 block">Turma: {c?.name || '-'}</span>
-                            </div>
-                            <div className="flex items-center gap-2 shrink-0">
-                              <span className="font-mono font-bold bg-zinc-900 px-2 py-1 rounded text-blue-400 text-[10px]">
-                                {wl.totalLessons} h/aula
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => handleStartEditWorkload(wl)}
-                                className="text-zinc-500 hover:text-blue-400 p-1 cursor-pointer"
-                                title="Editar"
-                              >
-                                <Edit2 className="w-3.5 h-3.5" />
-                              </button>
-                              <button
-                                id={`delete-workload-btn-${wl.id}`}
-                                type="button"
-                                onClick={() => handleDeleteWorkload(wl.id!)}
-                                className="text-zinc-500 hover:text-rose-400 cursor-pointer p-1"
-                                title="Excluir"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          </>
-                        )}
+                      <div key={wl.id} className="flex items-center justify-between py-2.5 text-xs text-zinc-300 gap-2">
+                        <div>
+                          <span className="font-semibold text-zinc-200">{sub?.name || 'Disciplina'}</span>
+                          <span className="text-[10px] text-zinc-500 block">Série/Turma: {c?.name || '-'}</span>
+                        </div>
+                        <span className="font-mono font-bold bg-sky-500/10 border border-sky-500/20 px-2.5 py-1 rounded-full text-sky-400 text-[10px] shrink-0">
+                          {wl.totalLessons} aulas/ano
+                        </span>
                       </div>
                     );
                   })

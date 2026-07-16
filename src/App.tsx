@@ -9,6 +9,7 @@ import TabDAttendance from './components/TabD_Attendance';
 import TabEReports from './components/TabE_Reports';
 import TabFSettings from './components/TabF_Settings';
 import CoordGlobalClasses from './components/CoordGlobalClasses';
+import CoordGlobalSubjects from './components/CoordGlobalSubjects';
 import { sortClasses } from './types';
 import { FileText, CheckSquare, Trophy, Calendar, FileBarChart2, Settings, Sparkles, Lock, User, Eye, EyeOff, LogOut, Key, AlertTriangle, Plus, ShieldAlert, Shield, Search, UserPlus, Trash2, ArrowLeft, Check, LogIn, Users, Pencil, X, School, BookOpen } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -132,7 +133,7 @@ export default function App() {
   });
 
   // Coordinator dashboard states
-  const [coordActiveTab, setCoordActiveTab] = useState<'inspect' | 'accounts' | 'global-classes'>('inspect');
+  const [coordActiveTab, setCoordActiveTab] = useState<'inspect' | 'accounts' | 'global-classes' | 'global-subjects'>('inspect');
   const [searchTeacherQuery, setSearchTeacherQuery] = useState('');
   
   // Coordinator Account creation form
@@ -1429,6 +1430,14 @@ export default function App() {
             >
               <School className="w-4 h-4" /> Turmas & Alunos Globais
             </button>
+            <button
+              onClick={() => setCoordActiveTab('global-subjects')}
+              className={`px-4 py-3 font-bold text-xs border-b-2 transition flex items-center gap-2 cursor-pointer ${
+                coordActiveTab === 'global-subjects' ? 'border-amber-500 text-amber-400 bg-amber-500/5' : 'border-transparent text-zinc-400 hover:text-zinc-300'
+              }`}
+            >
+              <BookOpen className="w-4 h-4" /> Disciplinas & Cargas Globais
+            </button>
           </div>
         </div>
 
@@ -1436,6 +1445,10 @@ export default function App() {
         <main className="flex-1 max-w-7xl w-full mx-auto p-4 md:p-6 pb-20">
           {coordActiveTab === 'global-classes' && (
             <CoordGlobalClasses />
+          )}
+
+          {coordActiveTab === 'global-subjects' && (
+            <CoordGlobalSubjects />
           )}
 
           {coordActiveTab === 'inspect' && (
