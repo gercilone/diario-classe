@@ -518,6 +518,7 @@ export interface GlobalWorkload {
   classId: string;
   subjectId: string;
   totalLessons: number;
+  teacherUsername?: string;
 }
 
 export async function getGlobalSubjects(): Promise<GlobalSubject[]> {

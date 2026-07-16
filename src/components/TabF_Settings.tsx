@@ -135,8 +135,14 @@ export default function TabFSettings({ teacherName, setTeacherName, onSecuritySa
 
       // 4. Map global workloads to local workloads
       let importedWorkloadsCount = 0;
+      const activeUser = localStorage.getItem('portal_active_user');
 
       for (const gwl of globalWls) {
+        // Filter workloads by assigned teacher if defined
+        if (gwl.teacherUsername && activeUser && gwl.teacherUsername.toLowerCase() !== activeUser.toLowerCase()) {
+          continue;
+        }
+
         const gClass = globalCls.find(c => c.id === gwl.classId);
         if (!gClass) continue;
 
@@ -175,7 +181,6 @@ export default function TabFSettings({ teacherName, setTeacherName, onSecuritySa
       }
 
       // Force push teacher data to cloud to sync everything up
-      const activeUser = localStorage.getItem('portal_active_user');
       if (activeUser) {
         await pushTeacherDataToCloud(activeUser, db);
       }

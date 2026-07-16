@@ -11,7 +11,9 @@ import {
   deleteGlobalSubject,
   getGlobalWorkloads,
   saveGlobalWorkload,
-  deleteGlobalWorkload
+  deleteGlobalWorkload,
+  syncProfessorsListInCloud,
+  ProfessorAccount
 } from '../firebase';
 import {
   Plus,
@@ -35,6 +37,7 @@ export default function CoordGlobalSubjects() {
   const [classes, setClasses] = useState<GlobalClass[]>([]);
   const [subjects, setSubjects] = useState<GlobalSubject[]>([]);
   const [workloads, setWorkloads] = useState<GlobalWorkload[]>([]);
+  const [professors, setProfessors] = useState<ProfessorAccount[]>([]);
 
   // Selection states
   const [selectedSchoolId, setSelectedSchoolId] = useState<string>('');
@@ -54,6 +57,14 @@ export default function CoordGlobalSubjects() {
   const [workloadLessons, setWorkloadLessons] = useState<number>(80);
   const [editingWorkloadId, setEditingWorkloadId] = useState<string | null>(null);
   const [editingWorkloadLessons, setEditingWorkloadLessons] = useState<number | ''>('');
+  const [selectedTeacherUsername, setSelectedTeacherUsername] = useState<string>('');
+  const [selectedClassIds, setSelectedClassIds] = useState<string[]>([]);
+  const [searchWorkloadQuery, setSearchWorkloadQuery] = useState('');
+
+  // Auto-clear selection when school changes
+  useEffect(() => {
+    setSelectedClassIds([]);
+  }, [selectedSchoolId]);
 
   // Load data on mount
   useEffect(() => {
@@ -67,11 +78,13 @@ export default function CoordGlobalSubjects() {
       const cls = await getGlobalClasses();
       const subs = await getGlobalSubjects();
       const wls = await getGlobalWorkloads();
+      const profs = await syncProfessorsListInCloud();
 
       setSchools(schs);
       setClasses(cls);
       setSubjects(subs);
       setWorkloads(wls);
+      setProfessors(profs);
 
       // Auto-select first school if none selected
       if (schs.length > 0 && !selectedSchoolId) {
@@ -172,30 +185,44 @@ export default function CoordGlobalSubjects() {
   // WORKLOAD ACTIONS
   const handleAddWorkload = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedClassId || !selectedSubjectId || !workloadLessons) return;
+    if (selectedClassIds.length === 0) {
+      showMsg('Por favor, selecione pelo menos uma série/turma.', 'error');
+      return;
+    }
+    if (!selectedSubjectId || !workloadLessons) {
+      showMsg('Por favor, preencha todos os campos obrigatórios.', 'error');
+      return;
+    }
 
     setIsLoading(true);
     try {
-      // Check if workload already exists for this class and subject
-      const existing = workloads.find(w => w.classId === selectedClassId && w.subjectId === selectedSubjectId);
-      
-      const id = existing ? existing.id : 'wl_' + Date.now();
-      const newWl: GlobalWorkload = {
-        id,
-        classId: selectedClassId,
-        subjectId: selectedSubjectId,
-        totalLessons: Number(workloadLessons)
-      };
+      const updatedWorkloadsList = [...workloads];
 
-      await saveGlobalWorkload(newWl);
+      for (const classId of selectedClassIds) {
+        // Find if workload already exists for this class and subject
+        const existingIndex = updatedWorkloadsList.findIndex(w => w.classId === classId && w.subjectId === selectedSubjectId);
+        
+        const id = existingIndex !== -1 ? updatedWorkloadsList[existingIndex].id : 'wl_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
+        const newWl: GlobalWorkload = {
+          id,
+          classId,
+          subjectId: selectedSubjectId,
+          totalLessons: Number(workloadLessons),
+          teacherUsername: selectedTeacherUsername || ''
+        };
 
-      if (existing) {
-        setWorkloads(prev => prev.map(w => w.id === existing.id ? newWl : w));
-        showMsg('Carga horária atualizada com sucesso!', 'success');
-      } else {
-        setWorkloads(prev => [...prev, newWl]);
-        showMsg('Carga horária cadastrada com sucesso!', 'success');
+        await saveGlobalWorkload(newWl);
+
+        if (existingIndex !== -1) {
+          updatedWorkloadsList[existingIndex] = newWl;
+        } else {
+          updatedWorkloadsList.push(newWl);
+        }
       }
+
+      setWorkloads(updatedWorkloadsList);
+      setSelectedClassIds([]); // Reset selected classes
+      showMsg('Cargas horárias e atribuições salvas com sucesso!', 'success');
     } catch (err) {
       console.error(err);
       showMsg('Erro ao salvar carga horária.', 'error');
@@ -241,18 +268,22 @@ export default function CoordGlobalSubjects() {
 
   // Filter lists
   const schoolClasses = [...classes].filter(c => c.schoolId === selectedSchoolId).sort(sortClasses);
-  const currentClassWorkloads = workloads.filter(w => w.classId === selectedClassId);
+  const schoolClassIds = schoolClasses.map(c => c.id);
+  const schoolWorkloads = workloads.filter(w => schoolClassIds.includes(w.classId));
 
-  // Auto-select class when school changes
-  useEffect(() => {
-    if (schoolClasses.length > 0) {
-      if (!schoolClasses.some(c => c.id === selectedClassId)) {
-        setSelectedClassId(schoolClasses[0].id);
-      }
-    } else {
-      setSelectedClassId('');
-    }
-  }, [selectedSchoolId, classes]);
+  const filteredSchoolWorkloads = schoolWorkloads.filter(wl => {
+    const cls = classes.find(c => c.id === wl.classId);
+    const sub = subjects.find(s => s.id === wl.subjectId);
+    const prof = professors.find(p => p.username.toLowerCase() === wl.teacherUsername?.toLowerCase());
+    
+    const query = searchWorkloadQuery.toLowerCase();
+    return (
+      (cls?.name.toLowerCase() || '').includes(query) ||
+      (sub?.name.toLowerCase() || '').includes(query) ||
+      (prof?.teacherName.toLowerCase() || '').includes(query) ||
+      (wl.teacherUsername?.toLowerCase() || '').includes(query)
+    );
+  });
 
   return (
     <div className="space-y-6">
@@ -372,7 +403,7 @@ export default function CoordGlobalSubjects() {
           <div className="bg-zinc-900 border border-zinc-800 p-5 rounded-2xl space-y-5">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-zinc-850 pb-3">
               <h4 className="text-white font-bold text-xs flex items-center gap-2 uppercase tracking-wider text-zinc-350">
-                <Clock className="w-4 h-4 text-amber-500" /> 2. Carga Horária por Turma
+                <Clock className="w-4 h-4 text-amber-500" /> 2. Carga Horária & Atribuição de Professores
               </h4>
               
               {/* School Selector */}
@@ -391,169 +422,233 @@ export default function CoordGlobalSubjects() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-12 gap-5">
+            <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
               
-              {/* Left inner col: Class selection list (Span 4) */}
-              <div className="md:col-span-4 space-y-2">
-                <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider">Selecione a Turma:</p>
-                <div className="space-y-1 max-h-[350px] overflow-y-auto pr-1 border border-zinc-850 p-2 rounded-xl bg-zinc-950/20">
-                  {schoolClasses.map((cls) => {
-                    const isSelected = selectedClassId === cls.id;
-                    const classWlCount = workloads.filter(w => w.classId === cls.id).length;
-                    
-                    return (
-                      <div
-                        key={cls.id}
-                        onClick={() => setSelectedClassId(cls.id)}
-                        className={`flex items-center justify-between px-3 py-2 rounded-lg border text-xs cursor-pointer transition ${
-                          isSelected
-                            ? 'bg-amber-500/10 border-amber-500/30 text-amber-300 font-bold'
-                            : 'bg-zinc-950/30 border-zinc-900/40 text-zinc-400 hover:text-zinc-300 hover:bg-zinc-900/20'
-                        }`}
-                      >
-                        <span className="truncate pr-1">{cls.name}</span>
-                        <span className="text-[9px] px-1.5 py-0.5 bg-zinc-850 text-zinc-400 rounded-full font-mono font-bold shrink-0">
-                          {classWlCount} disc
-                        </span>
-                      </div>
-                    );
-                  })}
-                  {schoolClasses.length === 0 && (
-                    <p className="text-zinc-650 text-xs italic py-4 text-center">Nenhuma turma cadastrada nesta escola.</p>
-                  )}
-                </div>
-              </div>
+              {/* Left inner column: Creation Form (Span 5) */}
+              <div className="xl:col-span-5 space-y-4">
+                <form onSubmit={handleAddWorkload} className="bg-zinc-950/40 border border-zinc-850 p-4 rounded-xl space-y-4">
+                  <p className="text-xs font-bold text-zinc-200 flex items-center gap-1.5 border-b border-zinc-850 pb-2">
+                    <Plus className="w-4 h-4 text-amber-500" /> Cadastrar Nova Carga
+                  </p>
+                  
+                  {/* Professor Select */}
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-zinc-400 font-bold uppercase block">Professor Responsável</label>
+                    <select
+                      value={selectedTeacherUsername}
+                      onChange={(e) => setSelectedTeacherUsername(e.target.value)}
+                      className="bg-zinc-950 border border-zinc-800 text-zinc-300 text-xs rounded-xl px-3 py-2 w-full focus:outline-none focus:ring-1 focus:ring-amber-500"
+                    >
+                      <option value="">Selecione...</option>
+                      {professors.map((prof) => (
+                        <option key={prof.username} value={prof.username}>
+                          {prof.teacherName} ({prof.username})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
 
-              {/* Right inner col: Workloads list & configuration (Span 8) */}
-              <div className="md:col-span-8 space-y-4">
-                {selectedClassId ? (
-                  <>
-                    {/* Add/Edit Workload Form */}
-                    <form onSubmit={handleAddWorkload} className="bg-zinc-950/40 border border-zinc-850 p-4 rounded-xl space-y-3">
-                      <p className="text-xs font-bold text-zinc-350 flex items-center gap-1.5">
-                        <Plus className="w-4 h-4 text-amber-500" /> Configurar Carga Horária
-                      </p>
-                      
-                      <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
-                        <div className="sm:col-span-6 space-y-1">
-                          <label className="text-[9px] text-zinc-500 font-bold uppercase block">Disciplina</label>
-                          <select
-                            required
-                            value={selectedSubjectId}
-                            onChange={(e) => setSelectedSubjectId(e.target.value)}
-                            className="bg-zinc-950 border border-zinc-800 text-zinc-300 text-xs rounded-xl px-3 py-2 w-full focus:outline-none focus:ring-1 focus:ring-amber-500"
-                          >
-                            <option value="">Selecione...</option>
-                            {subjects.map((sub) => (
-                              <option key={sub.id} value={sub.id}>{sub.name}</option>
-                            ))}
-                          </select>
-                        </div>
-                        <div className="sm:col-span-4 space-y-1">
-                          <label className="text-[9px] text-zinc-500 font-bold uppercase block">Carga Horária (Aulas)</label>
-                          <input
-                            type="number"
-                            required
-                            min={1}
-                            value={workloadLessons}
-                            onChange={(e) => setWorkloadLessons(Number(e.target.value))}
-                            className="bg-zinc-950 border border-zinc-800 text-zinc-300 text-xs rounded-xl px-3 py-1.5 w-full focus:outline-none focus:ring-1 focus:ring-amber-500 font-mono font-bold"
-                          />
-                        </div>
-                        <div className="sm:col-span-2 flex items-end">
-                          <button
-                            type="submit"
-                            className="w-full py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-xl font-bold text-xs transition cursor-pointer flex items-center justify-center"
-                            title="Salvar Carga"
-                          >
-                            Salvar
-                          </button>
-                        </div>
-                      </div>
-                    </form>
+                  {/* Subject Select */}
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-zinc-400 font-bold uppercase block">Disciplina/Matéria</label>
+                    <select
+                      required
+                      value={selectedSubjectId}
+                      onChange={(e) => setSelectedSubjectId(e.target.value)}
+                      className="bg-zinc-950 border border-zinc-800 text-zinc-300 text-xs rounded-xl px-3 py-2 w-full focus:outline-none focus:ring-1 focus:ring-amber-500"
+                    >
+                      <option value="">Selecione...</option>
+                      {subjects.map((sub) => (
+                        <option key={sub.id} value={sub.id}>{sub.name}</option>
+                      ))}
+                    </select>
+                  </div>
 
-                    {/* Active workloads list for selected class */}
-                    <div className="space-y-2">
-                      <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider">Cargas Registradas nesta Turma ({currentClassWorkloads.length}):</p>
-                      <div className="space-y-1.5 max-h-[220px] overflow-y-auto pr-1">
-                        {currentClassWorkloads.map((wl) => {
-                          const associatedSubject = subjects.find(s => s.id === wl.subjectId);
-                          const isEditingThis = editingWorkloadId === wl.id;
-                          
-                          return (
-                            <div key={wl.id} className="flex items-center justify-between bg-zinc-950/25 border border-zinc-850/80 rounded-xl px-3 py-2 text-xs hover:border-zinc-800 transition">
-                              <div className="flex items-center gap-2 truncate pr-2">
-                                <ChevronRight className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                                <span className="text-zinc-300 font-semibold truncate">
-                                  {associatedSubject ? associatedSubject.name : 'Disciplina Desconhecida'}
-                                </span>
-                              </div>
-                              
-                              <div className="flex items-center gap-2 shrink-0">
-                                {isEditingThis ? (
-                                  <div className="flex items-center gap-1">
-                                    <input
-                                      type="number"
-                                      className="w-16 bg-zinc-950 border border-zinc-800 text-zinc-200 text-xs font-mono font-bold rounded px-1.5 py-0.5"
-                                      value={editingWorkloadLessons}
-                                      onChange={(e) => setEditingWorkloadLessons(e.target.value === '' ? '' : Number(e.target.value))}
-                                    />
-                                    <button
-                                      onClick={() => handleUpdateWorkloadInline(wl, Number(editingWorkloadLessons))}
-                                      className="px-2 py-0.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[10px] rounded"
-                                    >
-                                      Ok
-                                    </button>
-                                    <button
-                                      onClick={() => setEditingWorkloadId(null)}
-                                      className="p-0.5 bg-zinc-800 text-zinc-400 rounded hover:text-white"
-                                    >
-                                      <X className="w-3 h-3" />
-                                    </button>
-                                  </div>
-                                ) : (
-                                  <>
-                                    <span className="text-amber-400 font-mono font-bold bg-amber-500/5 px-2 py-0.5 rounded border border-amber-500/10 text-[11px]">
-                                      {wl.totalLessons} aulas
-                                    </span>
-                                    <button
-                                      onClick={() => {
-                                        setEditingWorkloadId(wl.id);
-                                        setEditingWorkloadLessons(wl.totalLessons);
-                                      }}
-                                      className="p-1 hover:bg-zinc-800 text-zinc-400 hover:text-white rounded transition cursor-pointer"
-                                      title="Editar Carga"
-                                    >
-                                      <Edit2 className="w-3 h-3" />
-                                    </button>
-                                    <button
-                                      onClick={() => handleDeleteWorkloadClick(wl.id)}
-                                      className="p-1 hover:bg-zinc-800 text-zinc-500 hover:text-rose-450 rounded transition cursor-pointer"
-                                      title="Excluir Carga"
-                                    >
-                                      <Trash2 className="w-3 h-3" />
-                                    </button>
-                                  </>
-                                )}
-                              </div>
-                            </div>
-                          );
-                        })}
-                        {currentClassWorkloads.length === 0 && (
-                          <div className="text-center py-8 text-zinc-500 bg-zinc-950/10 border border-dashed border-zinc-850 rounded-xl">
-                            <Clock className="w-6 h-6 mx-auto mb-1.5 opacity-20" />
-                            <p className="text-xs">Nenhuma carga horária registrada para esta turma.</p>
-                          </div>
-                        )}
+                  {/* Lessons Count */}
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-zinc-400 font-bold uppercase block">Carga Horária (Total de Aulas)</label>
+                    <input
+                      type="number"
+                      required
+                      min={1}
+                      value={workloadLessons}
+                      onChange={(e) => setWorkloadLessons(Number(e.target.value))}
+                      className="bg-zinc-950 border border-zinc-800 text-zinc-350 text-xs rounded-xl px-3 py-2 w-full focus:outline-none focus:ring-1 focus:ring-amber-500 font-mono font-bold"
+                    />
+                  </div>
+
+                  {/* Classes Selection Checklist */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[10px] text-zinc-400 font-bold uppercase block">Séries/Turmas ({selectedClassIds.length} sel.)</label>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedClassIds(schoolClasses.map(c => c.id))}
+                          className="text-[9px] text-amber-500 hover:underline font-bold cursor-pointer"
+                        >
+                          Todas
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedClassIds([])}
+                          className="text-[9px] text-zinc-500 hover:underline font-bold cursor-pointer"
+                        >
+                          Limpar
+                        </button>
                       </div>
                     </div>
-                  </>
-                ) : (
-                  <div className="text-center py-16 text-zinc-500 bg-zinc-950/20 border border-dashed border-zinc-800 rounded-2xl">
-                    <Clock className="w-12 h-12 mx-auto mb-3 opacity-20" />
-                    <p className="text-sm font-medium">Selecione uma turma ao lado para visualizar e configurar suas cargas horárias.</p>
+                    
+                    <div className="space-y-1.5 max-h-[180px] overflow-y-auto pr-1 border border-zinc-850 p-2 rounded-xl bg-zinc-950/20">
+                      {schoolClasses.map((cls) => {
+                        const isChecked = selectedClassIds.includes(cls.id);
+                        return (
+                          <label
+                            key={cls.id}
+                            className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg border text-xs cursor-pointer transition select-none ${
+                              isChecked
+                                ? 'bg-amber-500/5 border-amber-500/25 text-amber-300 font-medium'
+                                : 'bg-zinc-950/20 border-zinc-900/40 text-zinc-400 hover:text-zinc-300'
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={() => {
+                                setSelectedClassIds(prev =>
+                                  prev.includes(cls.id) ? prev.filter(id => id !== cls.id) : [...prev, cls.id]
+                                );
+                              }}
+                              className="accent-amber-500"
+                            />
+                            <span className="truncate">{cls.name}</span>
+                          </label>
+                        );
+                      })}
+                      {schoolClasses.length === 0 && (
+                        <p className="text-zinc-650 text-xs italic py-4 text-center">Nenhuma turma nesta escola.</p>
+                      )}
+                    </div>
                   </div>
-                )}
+
+                  <button
+                    type="submit"
+                    className="w-full py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-xl font-bold text-xs transition cursor-pointer flex items-center justify-center gap-1"
+                  >
+                    <Plus className="w-4 h-4" /> Salvar Atribuições
+                  </button>
+                </form>
+              </div>
+
+              {/* Right inner column: List of registered workloads in the school (Span 7) */}
+              <div className="xl:col-span-7 space-y-4">
+                <div className="flex items-center gap-2 bg-zinc-950 border border-zinc-850 px-3 py-1.5 rounded-xl">
+                  <input
+                    type="text"
+                    placeholder="Filtrar por turma, disciplina ou professor..."
+                    value={searchWorkloadQuery}
+                    onChange={(e) => setSearchWorkloadQuery(e.target.value)}
+                    className="bg-transparent text-zinc-200 text-xs focus:outline-none w-full"
+                  />
+                  {searchWorkloadQuery && (
+                    <button onClick={() => setSearchWorkloadQuery('')} className="text-zinc-500 hover:text-zinc-300">
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider">
+                    Cargas e Atribuições Ativas ({filteredSchoolWorkloads.length}):
+                  </p>
+                  
+                  <div className="space-y-2 max-h-[480px] overflow-y-auto pr-1">
+                    {filteredSchoolWorkloads.map((wl) => {
+                      const associatedSubject = subjects.find(s => s.id === wl.subjectId);
+                      const associatedClass = classes.find(c => c.id === wl.classId);
+                      const associatedTeacher = professors.find(p => p.username.toLowerCase() === wl.teacherUsername?.toLowerCase());
+                      const isEditingThis = editingWorkloadId === wl.id;
+                      
+                      return (
+                        <div key={wl.id} className="bg-zinc-950/35 border border-zinc-850/80 rounded-xl p-3 text-xs hover:border-zinc-800 transition space-y-2">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="space-y-0.5 min-w-0">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="px-1.5 py-0.5 bg-zinc-800 text-zinc-300 rounded font-bold text-[10px]">
+                                  {associatedClass ? associatedClass.name : 'Turma Excluída'}
+                                </span>
+                                <span className="text-zinc-400 font-semibold truncate">
+                                  {associatedSubject ? associatedSubject.name : 'Disciplina Excluída'}
+                                </span>
+                              </div>
+                              <p className="text-zinc-500 text-[11px] flex items-center gap-1">
+                                <span className="font-medium text-zinc-400">Prof:</span> 
+                                <span className="text-zinc-300 font-medium">
+                                  {associatedTeacher ? associatedTeacher.teacherName : (wl.teacherUsername ? `@${wl.teacherUsername}` : 'Nenhum Professor Atribuído')}
+                                </span>
+                              </p>
+                            </div>
+                            
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              {isEditingThis ? (
+                                <div className="flex items-center gap-1">
+                                  <input
+                                    type="number"
+                                    className="w-16 bg-zinc-950 border border-zinc-800 text-zinc-200 text-xs font-mono font-bold rounded px-1.5 py-0.5"
+                                    value={editingWorkloadLessons}
+                                    onChange={(e) => setEditingWorkloadLessons(e.target.value === '' ? '' : Number(e.target.value))}
+                                  />
+                                  <button
+                                    onClick={() => handleUpdateWorkloadInline(wl, Number(editingWorkloadLessons))}
+                                    className="px-2 py-0.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[10px] rounded cursor-pointer"
+                                  >
+                                    Ok
+                                  </button>
+                                  <button
+                                    onClick={() => setEditingWorkloadId(null)}
+                                    className="p-0.5 bg-zinc-800 text-zinc-400 rounded hover:text-white cursor-pointer"
+                                  >
+                                    <X className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              ) : (
+                                <>
+                                  <span className="text-amber-400 font-mono font-bold bg-amber-500/5 px-2 py-0.5 rounded border border-amber-500/10 text-[10px]">
+                                    {wl.totalLessons} aulas
+                                  </span>
+                                  <button
+                                    onClick={() => {
+                                      setEditingWorkloadId(wl.id);
+                                      setEditingWorkloadLessons(wl.totalLessons);
+                                    }}
+                                    className="p-1 hover:bg-zinc-850 text-zinc-400 hover:text-white rounded transition cursor-pointer"
+                                    title="Editar Carga"
+                                  >
+                                    <Edit2 className="w-3 h-3" />
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteWorkloadClick(wl.id)}
+                                    className="p-1 hover:bg-zinc-850 text-zinc-500 hover:text-rose-450 rounded transition cursor-pointer"
+                                    title="Excluir Carga"
+                                  >
+                                    <Trash2 className="w-3 h-3" />
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                    
+                    {filteredSchoolWorkloads.length === 0 && (
+                      <div className="text-center py-12 text-zinc-500 bg-zinc-950/10 border border-dashed border-zinc-850 rounded-xl">
+                        <Clock className="w-6 h-6 mx-auto mb-1.5 opacity-20" />
+                        <p className="text-xs">Nenhuma carga horária correspondente encontrada.</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
 
             </div>
