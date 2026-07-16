@@ -1,7 +1,7 @@
 import { ChangeEvent } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db';
-import { School, Class, Subject } from '../types';
+import { School, Class, Subject, sortClasses } from '../types';
 import { School as SchoolIcon, Layers, BookOpen, CalendarDays, LogOut } from 'lucide-react';
 
 interface HeaderFiltersProps {
@@ -32,11 +32,14 @@ export default function HeaderFilters({
   onLogout,
 }: HeaderFiltersProps) {
   const schools = useLiveQuery(() => db.schools.toArray()) || [];
-  const classes = useLiveQuery(() => {
+  const classes = useLiveQuery(async () => {
+    let list;
     if (selectedSchoolId) {
-      return db.classes.where({ schoolId: selectedSchoolId }).toArray();
+      list = await db.classes.where({ schoolId: selectedSchoolId }).toArray();
+    } else {
+      list = await db.classes.toArray();
     }
-    return db.classes.toArray();
+    return list.sort(sortClasses);
   }, [selectedSchoolId]) || [];
   
   const subjects = useLiveQuery(() => db.subjects.toArray()) || [];

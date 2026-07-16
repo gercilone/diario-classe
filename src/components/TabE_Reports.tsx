@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db';
-import { Student, QUICK_SCORE_OPTIONS } from '../types';
+import { Student, QUICK_SCORE_OPTIONS, sortClasses } from '../types';
 import { FileText, Printer, FileSpreadsheet, Award, CheckCircle, Calendar, AlertTriangle, Eye, BookOpen, Share2, Info } from 'lucide-react';
 
 interface TabEReportsProps {
@@ -99,7 +99,8 @@ export default function TabEReports({ schoolId, classId, subjectId, bimonthly, i
   const allSchoolClasses = useLiveQuery(async () => {
     if (!schoolId) return [];
     const targetSchoolId = Number(schoolId);
-    return db.classes.filter(c => Number(c.schoolId) === targetSchoolId).toArray();
+    const list = await db.classes.filter(c => Number(c.schoolId) === targetSchoolId).toArray();
+    return list.sort(sortClasses);
   }, [schoolId]) || [];
 
   // Load all lessons in the database for the selected subject

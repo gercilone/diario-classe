@@ -9,6 +9,7 @@ import TabDAttendance from './components/TabD_Attendance';
 import TabEReports from './components/TabE_Reports';
 import TabFSettings from './components/TabF_Settings';
 import CoordGlobalClasses from './components/CoordGlobalClasses';
+import { sortClasses } from './types';
 import { FileText, CheckSquare, Trophy, Calendar, FileBarChart2, Settings, Sparkles, Lock, User, Eye, EyeOff, LogOut, Key, AlertTriangle, Plus, ShieldAlert, Shield, Search, UserPlus, Trash2, ArrowLeft, Check, LogIn, Users, Pencil, X, School, BookOpen } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -915,7 +916,7 @@ export default function App() {
   // If school is selected but no class is selected, pick the first class for that school
   useEffect(() => {
     if (selectedSchoolId) {
-      const schoolClasses = classes.filter((c) => c.schoolId === selectedSchoolId);
+      const schoolClasses = [...classes].filter((c) => c.schoolId === selectedSchoolId).sort(sortClasses);
       if (selectedClassId === undefined && schoolClasses.length > 0) {
         setSelectedClassId(schoolClasses[0].id);
       }

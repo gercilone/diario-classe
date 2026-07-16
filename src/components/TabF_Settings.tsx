@@ -1,7 +1,7 @@
 import { useState, FormEvent, ChangeEvent } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, seedDatabase, setCloudSyncDisabled } from '../db';
-import { School, Class, Subject, Student, SubjectWorkload, WeeklySchedule } from '../types';
+import { School, Class, Subject, Student, SubjectWorkload, WeeklySchedule, sortClasses } from '../types';
 import { Plus, Trash2, Edit2, X, Import, Download, Upload, Calendar, Clock, BookOpen, School as SchoolIcon, Users, Settings, Database, Check, AlertTriangle, Sparkles, Save, User, Lock, Shield, Eye, EyeOff, Cloud, CloudUpload, CloudDownload } from 'lucide-react';
 import { pushTeacherDataToCloud, pullTeacherDataFromCloud, getGlobalSchools, getGlobalClasses, getGlobalStudents } from '../firebase';
 
@@ -218,7 +218,7 @@ export default function TabFSettings({ teacherName, setTeacherName, onSecuritySa
   const weeklySchedules = useLiveQuery(() => db.weeklySchedule.toArray()) || [];
 
   const classesBySchool = selectedSchoolIdForStudent 
-    ? classes.filter(c => c.schoolId === selectedSchoolIdForStudent)
+    ? [...classes].filter(c => c.schoolId === selectedSchoolIdForStudent).sort(sortClasses)
     : [];
 
   // ACTIONS: CRUD Schools
@@ -1844,7 +1844,7 @@ export default function TabFSettings({ teacherName, setTeacherName, onSecuritySa
                 {classes.length === 0 ? (
                   <p className="text-[11px] text-zinc-500 text-center py-2">Nenhuma turma cadastrada.</p>
                 ) : (
-                  classes.map((cls) => {
+                  [...classes].sort(sortClasses).map((cls) => {
                     const sch = schools.find((s) => s.id === cls.schoolId);
                     return (
                       <div key={cls.id} className="flex items-center justify-between py-1.5 text-xs text-zinc-300 gap-2">
@@ -2219,7 +2219,7 @@ export default function TabFSettings({ teacherName, setTeacherName, onSecuritySa
                   className="bg-zinc-950 border border-zinc-800 text-zinc-200 text-xs rounded-xl px-2.5 py-2 w-full focus:ring-1 focus:ring-blue-500 focus:outline-none cursor-pointer"
                 >
                   <option value="" className="bg-zinc-950">Turma</option>
-                  {classes.map((c) => {
+                  {[...classes].sort(sortClasses).map((c) => {
                     const sch = schools.find((s) => s.id === c.schoolId);
                     return <option key={c.id} value={c.id} className="bg-zinc-950">{c.name} ({sch?.name.substring(0, 10)})</option>;
                   })}
@@ -2408,7 +2408,7 @@ export default function TabFSettings({ teacherName, setTeacherName, onSecuritySa
                     className="bg-zinc-950 border border-zinc-800 text-zinc-200 text-xs rounded-xl px-2.5 py-2 w-full focus:ring-1 focus:ring-blue-500 focus:outline-none disabled:opacity-40 cursor-pointer"
                   >
                     <option value="" className="bg-zinc-950">Turma</option>
-                    {classes.filter(c => c.schoolId === schedSchool).map((c) => (
+                    {classes.filter(c => c.schoolId === schedSchool).sort(sortClasses).map((c) => (
                       <option key={c.id} value={c.id} className="bg-zinc-950">{c.name}</option>
                     ))}
                   </select>
@@ -2556,7 +2556,7 @@ export default function TabFSettings({ teacherName, setTeacherName, onSecuritySa
                     className="w-full bg-zinc-900 border border-zinc-850 text-zinc-200 text-xs rounded-xl px-3 py-2.5 focus:outline-none focus:ring-1 focus:ring-purple-500"
                   >
                     <option value="">-- Selecione uma Turma --</option>
-                    {classes.map((cl) => {
+                    {[...classes].sort(sortClasses).map((cl) => {
                       const sch = schools.find((s) => s.id === cl.schoolId);
                       return (
                         <option key={cl.id} value={cl.id}>

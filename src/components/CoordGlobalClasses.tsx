@@ -28,6 +28,7 @@ import {
   FileText,
   Upload
 } from 'lucide-react';
+import { sortClasses } from '../types';
 
 export default function CoordGlobalClasses() {
   // Lists from cloud
@@ -719,7 +720,7 @@ export default function CoordGlobalClasses() {
   };
 
   // Filter lists
-  const filteredClasses = classes.filter(c => c.schoolId === selectedSchoolId);
+  const filteredClasses = [...classes].filter(c => c.schoolId === selectedSchoolId).sort(sortClasses);
   const filteredStudents = students.filter(st => st.classId === selectedClassId);
 
   // Auto-select class when school changes
@@ -1035,7 +1036,7 @@ export default function CoordGlobalClasses() {
             {/* Schools & Nested Classes List */}
             <div className="space-y-3 max-h-[500px] overflow-y-auto pr-1">
               {schools.map((sch) => {
-                const schoolClasses = classes.filter(c => c.schoolId === sch.id);
+                const schoolClasses = [...classes].filter(c => c.schoolId === sch.id).sort(sortClasses);
                 const isSelected = selectedSchoolId === sch.id;
 
                 return (

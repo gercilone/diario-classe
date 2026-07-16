@@ -137,3 +137,44 @@ export const QUICK_SCORE_OPTIONS: QuickScoreOption[] = [
   { key: "tarefa_casa", label: "Tarefa de casa", points: 1, icon: "🏠", color: "bg-blue-500/10 text-blue-400 border-blue-500/20" },
   { key: "explicando_turma", label: "Explicando p/ turma", points: 2, icon: "🏆", color: "bg-indigo-500/10 text-indigo-400 border-indigo-500/20" },
 ];
+
+export function getClassSortScore(name: string): number {
+  const normalized = name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""); // strip accents
+  
+  // Extract the first number from the name (e.g. 6 from "6º Ano", 1 from "1º Ano")
+  const match = normalized.match(/(\d+)/);
+  const num = match ? parseInt(match[1], 10) : 0;
+  
+  // Check if it is "Ensino Médio" or "Medio" or "E.M."
+  const isHighSchool = normalized.includes("medio") || normalized.includes("médio") || normalized.includes("e.m");
+  
+  // Check if it is "Fundamental"
+  const isFundamental = normalized.includes("fundamental") || normalized.includes("fund");
+  
+  if (isHighSchool) {
+    return 10 + num;
+  }
+  
+  if (isFundamental) {
+    return num;
+  }
+  
+  if (num >= 6 && num <= 9) {
+    return num; // 6, 7, 8, 9
+  }
+  if (num >= 1 && num <= 3) {
+    return 10 + num;
+  }
+  
+  return num > 0 ? num : 99;
+}
+
+export function sortClasses(a: { name: string }, b: { name: string }): number {
+  const scoreA = getClassSortScore(a.name);
+  const scoreB = getClassSortScore(b.name);
+  if (scoreA !== scoreB) {
+    return scoreA - scoreB;
+  }
+  return a.name.localeCompare(b.name, 'pt-BR', { numeric: true });
+}
+
