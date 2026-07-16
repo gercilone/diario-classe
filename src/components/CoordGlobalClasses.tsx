@@ -993,13 +993,13 @@ export default function CoordGlobalClasses() {
         {/* COL 1: SCHOOLS & CLASSES (LHS) */}
         <div className="lg:col-span-4 space-y-6">
           
-          {/* ESCOLAS */}
+          {/* ESCOLAS E SÉRIES (SUB-MENU) */}
           <div className="bg-zinc-900 border border-zinc-800 p-5 rounded-2xl space-y-4">
             <h4 className="text-white font-bold text-xs flex items-center gap-2 uppercase tracking-wider text-zinc-300">
-              <SchoolIcon className="w-4 h-4 text-amber-500" /> 1. Escolas
+              <SchoolIcon className="w-4 h-4 text-amber-500" /> 1. Escolas & Séries
             </h4>
 
-            {/* School Form */}
+            {/* School Registration Form */}
             {editingSchoolId ? (
               <form onSubmit={handleUpdateSchool} className="flex gap-2">
                 <input
@@ -1021,136 +1021,176 @@ export default function CoordGlobalClasses() {
                 <input
                   type="text"
                   required
-                  placeholder="Nome da Escola..."
+                  placeholder="Cadastrar nova escola..."
                   value={newSchoolName}
                   onChange={(e) => setNewSchoolName(e.target.value)}
-                  className="bg-zinc-950 border border-zinc-800 text-zinc-300 text-xs rounded-xl px-3 py-2 w-full focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  className="bg-zinc-950 border border-zinc-800 text-zinc-350 text-xs rounded-xl px-3 py-2 w-full focus:outline-none focus:ring-1 focus:ring-amber-500"
                 />
-                <button type="submit" className="p-2.5 bg-amber-600 hover:bg-amber-500 text-white rounded-xl transition cursor-pointer shrink-0">
+                <button type="submit" className="p-2.5 bg-amber-600 hover:bg-amber-500 text-white rounded-xl transition cursor-pointer shrink-0" title="Cadastrar Escola">
                   <Plus className="w-4 h-4" />
                 </button>
               </form>
             )}
 
-            {/* Schools List */}
-            <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
-              {schools.map((sch) => (
-                <div 
-                  key={sch.id} 
-                  onClick={() => setSelectedSchoolId(sch.id)}
-                  className={`flex items-center justify-between p-2.5 rounded-xl border text-xs font-medium cursor-pointer transition ${
-                    selectedSchoolId === sch.id
-                      ? 'bg-amber-600/10 border-amber-500 text-amber-400'
-                      : 'bg-zinc-950/40 border-zinc-850 text-zinc-300 hover:bg-zinc-900/40'
-                  }`}
-                >
-                  <span className="truncate pr-2">{sch.name}</span>
-                  <div className="flex items-center gap-1 shrink-0" onClick={e => e.stopPropagation()}>
-                    <button 
-                      onClick={() => {
-                        setEditingSchoolId(sch.id);
-                        setEditingSchoolName(sch.name);
-                      }} 
-                      className="p-1 hover:bg-zinc-800 text-zinc-400 hover:text-white rounded transition cursor-pointer"
-                    >
-                      <Edit2 className="w-3 h-3" />
-                    </button>
-                    <button 
-                      onClick={() => handleDeleteSchoolClick(sch.id, sch.name)} 
-                      className="p-1 hover:bg-zinc-800 text-zinc-500 hover:text-rose-400 rounded transition cursor-pointer"
-                    >
-                      <Trash2 className="w-3 h-3" />
-                    </button>
-                  </div>
-                </div>
-              ))}
-              {schools.length === 0 && (
-                <p className="text-zinc-500 text-xs text-center py-4">Nenhuma escola cadastrada.</p>
-              )}
-            </div>
-          </div>
+            {/* Schools & Nested Classes List */}
+            <div className="space-y-3 max-h-[500px] overflow-y-auto pr-1">
+              {schools.map((sch) => {
+                const schoolClasses = classes.filter(c => c.schoolId === sch.id);
+                const isSelected = selectedSchoolId === sch.id;
 
-          {/* TURMAS */}
-          <div className="bg-zinc-900 border border-zinc-800 p-5 rounded-2xl space-y-4">
-            <h4 className="text-white font-bold text-xs flex items-center gap-2 uppercase tracking-wider text-zinc-300">
-              <BookOpen className="w-4 h-4 text-amber-500" /> 2. Turmas
-            </h4>
-
-            {selectedSchoolId ? (
-              <>
-                {/* Class Form */}
-                {editingClassId ? (
-                  <form onSubmit={handleUpdateClass} className="flex gap-2">
-                    <input
-                      type="text"
-                      required
-                      value={editingClassName}
-                      onChange={(e) => setEditingClassName(e.target.value)}
-                      className="bg-zinc-950 border border-zinc-800 text-zinc-200 text-xs rounded-xl px-3 py-2 w-full focus:outline-none focus:ring-1 focus:ring-amber-500"
-                    />
-                    <button type="submit" className="px-3 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl transition cursor-pointer">
-                      Salvar
-                    </button>
-                    <button type="button" onClick={() => setEditingClassId(null)} className="p-2 bg-zinc-800 hover:bg-zinc-750 text-zinc-400 rounded-xl transition cursor-pointer">
-                      <X className="w-4 h-4" />
-                    </button>
-                  </form>
-                ) : (
-                  <form onSubmit={handleAddClass} className="flex gap-2">
-                    <input
-                      type="text"
-                      required
-                      placeholder="Ex: 1º Ano A..."
-                      value={newClassName}
-                      onChange={(e) => setNewClassName(e.target.value)}
-                      className="bg-zinc-950 border border-zinc-800 text-zinc-300 text-xs rounded-xl px-3 py-2 w-full focus:outline-none focus:ring-1 focus:ring-amber-500"
-                    />
-                    <button type="submit" className="p-2.5 bg-amber-600 hover:bg-amber-500 text-white rounded-xl transition cursor-pointer shrink-0">
-                      <Plus className="w-4 h-4" />
-                    </button>
-                  </form>
-                )}
-
-                {/* Classes list */}
-                <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
-                  {filteredClasses.map((cls) => (
+                return (
+                  <div key={sch.id} className="space-y-2 border border-zinc-850 bg-zinc-950/20 p-2 rounded-xl">
+                    {/* School row */}
                     <div 
-                      key={cls.id} 
-                      onClick={() => setSelectedClassId(cls.id)}
-                      className={`flex items-center justify-between p-2.5 rounded-xl border text-xs font-medium cursor-pointer transition ${
-                        selectedClassId === cls.id
-                          ? 'bg-amber-600/10 border-amber-500 text-amber-400 font-bold'
-                          : 'bg-zinc-950/40 border-zinc-850 text-zinc-300 hover:bg-zinc-900/40'
+                      onClick={() => {
+                        setSelectedSchoolId(sch.id);
+                        // Auto-select first class of this school if available
+                        const firstClass = schoolClasses[0];
+                        if (firstClass) {
+                          setSelectedClassId(firstClass.id);
+                        } else {
+                          setSelectedClassId('');
+                        }
+                      }}
+                      className={`flex items-center justify-between p-2 rounded-lg cursor-pointer transition ${
+                        isSelected
+                          ? 'bg-amber-600/15 border border-amber-500/20 text-amber-400 font-bold'
+                          : 'text-zinc-300 hover:bg-zinc-900/40'
                       }`}
                     >
-                      <span className="truncate pr-2">{cls.name}</span>
+                      <div className="flex items-center gap-2 truncate pr-2">
+                        <SchoolIcon className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                        <span className="truncate text-xs">{sch.name}</span>
+                        <span className="text-[9px] bg-zinc-800 text-zinc-400 px-1.5 py-0.5 rounded-full font-mono shrink-0">
+                          {schoolClasses.length}
+                        </span>
+                      </div>
                       <div className="flex items-center gap-1 shrink-0" onClick={e => e.stopPropagation()}>
                         <button 
                           onClick={() => {
-                            setEditingClassId(cls.id);
-                            setEditingClassName(cls.name);
+                            setEditingSchoolId(sch.id);
+                            setEditingSchoolName(sch.name);
                           }} 
-                          className="p-1 hover:bg-zinc-800 text-zinc-400 hover:text-white rounded transition cursor-pointer"
+                          className="p-1 hover:bg-zinc-850 text-zinc-400 hover:text-white rounded transition cursor-pointer"
+                          title="Editar Escola"
                         >
                           <Edit2 className="w-3 h-3" />
                         </button>
                         <button 
-                          onClick={() => handleDeleteClassClick(cls.id, cls.name)} 
-                          className="p-1 hover:bg-zinc-800 text-zinc-500 hover:text-rose-400 rounded transition cursor-pointer"
+                          onClick={() => handleDeleteSchoolClick(sch.id, sch.name)} 
+                          className="p-1 hover:bg-zinc-850 text-zinc-500 hover:text-rose-400 rounded transition cursor-pointer"
+                          title="Excluir Escola"
                         >
                           <Trash2 className="w-3 h-3" />
                         </button>
                       </div>
                     </div>
-                  ))}
-                  {filteredClasses.length === 0 && (
-                    <p className="text-zinc-500 text-xs text-center py-4">Nenhuma turma cadastrada nesta escola.</p>
-                  )}
-                </div>
-              </>
-            ) : (
-              <p className="text-zinc-500 text-xs text-center py-6">Selecione ou crie uma escola primeiro.</p>
-            )}
+
+                    {/* Submenu of series/classes for the selected school */}
+                    {isSelected && (
+                      <div className="pl-3.5 pr-1 py-1 space-y-1.5 border-l border-zinc-800/80 ml-2.5">
+                        <p className="text-[10px] text-zinc-500 font-extrabold uppercase tracking-wide">Séries / Turmas:</p>
+                        
+                        {/* Class creation/editing inside submenu */}
+                        {editingClassId ? (
+                          <form 
+                            onSubmit={(e) => {
+                              e.preventDefault();
+                              handleUpdateClass(e);
+                            }} 
+                            className="flex gap-1"
+                            onClick={e => e.stopPropagation()}
+                          >
+                            <input
+                              type="text"
+                              required
+                              value={editingClassName}
+                              onChange={(e) => setEditingClassName(e.target.value)}
+                              className="bg-zinc-950 border border-zinc-800 text-zinc-200 text-[11px] rounded-lg px-2.5 py-1 w-full focus:outline-none focus:ring-1 focus:ring-amber-500"
+                            />
+                            <button type="submit" className="px-2 bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-bold rounded-lg transition cursor-pointer">
+                              Ok
+                            </button>
+                            <button type="button" onClick={() => setEditingClassId(null)} className="p-1 bg-zinc-800 hover:bg-zinc-750 text-zinc-400 rounded-lg transition cursor-pointer">
+                              <X className="w-3 h-3" />
+                            </button>
+                          </form>
+                        ) : (
+                          <form 
+                            onSubmit={(e) => {
+                              e.preventDefault();
+                              handleAddClass(e);
+                            }} 
+                            className="flex gap-1"
+                            onClick={e => e.stopPropagation()}
+                          >
+                            <input
+                              type="text"
+                              required
+                              placeholder="Nova série (ex: 1º Ano A)..."
+                              value={newClassName}
+                              onChange={(e) => setNewClassName(e.target.value)}
+                              className="bg-zinc-950 border border-zinc-800 text-zinc-300 text-[11px] rounded-lg px-2.5 py-1.5 w-full focus:outline-none focus:ring-1 focus:ring-amber-500"
+                            />
+                            <button type="submit" className="p-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded-lg transition cursor-pointer shrink-0" title="Cadastrar Série">
+                              <Plus className="w-3 h-3" />
+                            </button>
+                          </form>
+                        )}
+
+                        {/* List of series */}
+                        <div className="space-y-1 max-h-40 overflow-y-auto pr-1">
+                          {schoolClasses.map((cls) => {
+                            const isClassSelected = selectedClassId === cls.id;
+                            return (
+                              <div
+                                key={cls.id}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSelectedClassId(cls.id);
+                                }}
+                                className={`flex items-center justify-between px-2.5 py-1.5 rounded-lg border text-[11px] font-medium cursor-pointer transition ${
+                                  isClassSelected
+                                    ? 'bg-amber-500/10 border-amber-500/30 text-amber-300 font-bold'
+                                    : 'bg-zinc-950/40 border-zinc-900/40 text-zinc-400 hover:text-zinc-300 hover:bg-zinc-900/30'
+                                }`}
+                              >
+                                <span className="truncate pr-2">{cls.name}</span>
+                                <div className="flex items-center gap-1 shrink-0" onClick={e => e.stopPropagation()}>
+                                  <button 
+                                    onClick={() => {
+                                      setEditingClassId(cls.id);
+                                      setEditingClassName(cls.name);
+                                    }} 
+                                    className="p-0.5 hover:bg-zinc-850 text-zinc-500 hover:text-white rounded transition cursor-pointer"
+                                    title="Editar Série"
+                                  >
+                                    <Edit2 className="w-2.5 h-2.5" />
+                                  </button>
+                                  <button 
+                                    onClick={() => handleDeleteClassClick(cls.id, cls.name)} 
+                                    className="p-0.5 hover:bg-zinc-850 text-zinc-650 hover:text-rose-450 rounded transition cursor-pointer"
+                                    title="Excluir Série"
+                                  >
+                                    <Trash2 className="w-2.5 h-2.5" />
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                          {schoolClasses.length === 0 && (
+                            <p className="text-zinc-600 text-[10px] italic py-1 pl-1">Nenhuma série cadastrada.</p>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+              {schools.length === 0 && (
+                <p className="text-zinc-500 text-xs text-center py-4">Nenhuma escola cadastrada.</p>
+              )}
+            </div>
           </div>
 
         </div>

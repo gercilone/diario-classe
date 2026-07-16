@@ -277,6 +277,7 @@ export default function App() {
         localStorage.setItem('portal_teacher_name', matchingCoord.name);
         localStorage.setItem('portal_username', matchingCoord.username);
         localStorage.setItem('portal_password', matchingCoord.password);
+        localStorage.setItem('portal_force_cloud_pull', 'true');
         
         if (rememberMe) {
           localStorage.setItem('portal_is_authenticated_persistent', 'true');
@@ -875,6 +876,23 @@ export default function App() {
           if (!inspecting) {
             await seedDatabase();
           }
+        }
+      } else if (activeUser && isAuthenticated && role === 'coordinator') {
+        try {
+          const forcePull = localStorage.getItem('portal_force_cloud_pull') === 'true';
+          if (forcePull) {
+            setIsInitialSyncing(true);
+            setSyncStatusMessage('Sincronizando com a Nuvem... Carregando dados da coordenação e turmas...');
+            // Wait 1.2 seconds for a smooth visual feedback
+            await new Promise((r) => setTimeout(r, 1200));
+            await syncCoordinatorsListInCloud();
+            await syncProfessorsListInCloud();
+            localStorage.removeItem('portal_force_cloud_pull');
+            setIsInitialSyncing(false);
+          }
+        } catch (err) {
+          console.error('Error during coordinator startup sync:', err);
+          setIsInitialSyncing(false);
         }
       } else {
         // Fallback for default unauthenticated startup or coordinator view (no local db sync needed unless inspecting)

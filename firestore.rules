@@ -20,5 +20,16 @@ service cloud.firestore {
     match /diaries/{username}/{tableName}/{recordId} {
       allow read, write: if true;
     }
+
+    // Allow read/write access to global schools, classes and students
+    match /global_schools/{schoolId} {
+      allow read, write: if true;
+    }
+    match /global_classes/{classId} {
+      allow read, write: if true;
+    }
+    match /global_students/{studentId} {
+      allow read, write: if true;
+    }
   }
 }
