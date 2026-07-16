@@ -76,7 +76,7 @@ export default function TabCGamification({ schoolId, classId, subjectId, bimonth
   };
 
   // Calculate scores per student
-  const leaderboard = students.map((student) => {
+  const leaderboardSorted = students.map((student) => {
     const studentScores = scores.filter((s) => s.studentId === student.id);
     const totalPoints = studentScores.reduce((acc, curr) => acc + curr.points, 0);
     return {
@@ -85,6 +85,14 @@ export default function TabCGamification({ schoolId, classId, subjectId, bimonth
       scoresCount: studentScores.length,
     };
   }).sort((a, b) => b.totalPoints - a.totalPoints || a.student.rollNumber - b.student.rollNumber);
+
+  const leaderboard = leaderboardSorted.map((item) => {
+    const rank = leaderboardSorted.filter(other => other.totalPoints > item.totalPoints).length + 1;
+    return {
+      ...item,
+      rank,
+    };
+  });
 
   // Add points to all selected students
   const handleAddScore = async (option: QuickScoreOption) => {
@@ -134,7 +142,7 @@ export default function TabCGamification({ schoolId, classId, subjectId, bimonth
         <div className="bg-zinc-900/60 p-4 rounded-xl border border-zinc-800 space-y-3">
           <div className="flex justify-between items-center pb-1">
             <label className="text-xs font-bold uppercase text-zinc-400 tracking-wider flex items-center gap-1.5">
-              <User className="w-4 h-4 text-blue-400" /> Alunos Selecionados ({selectedStudentIds.length})
+              <User className="w-4 h-4 text-blue-400" /> Alunos da Turma ({selectedStudentIds.length} selecionados)
             </label>
             <div className="flex gap-2">
               <button
@@ -226,25 +234,6 @@ export default function TabCGamification({ schoolId, classId, subjectId, bimonth
                       <p className="text-xs text-zinc-400">Atribua pontos de comportamento em massa para todos os selecionados</p>
                     </div>
                   </div>
-                </div>
-                <div className="flex flex-wrap gap-1.5 pt-1.5 border-t border-zinc-800/60">
-                  {selectedStudentIds.map((id) => {
-                    const st = students.find((s) => s.id === id);
-                    if (!st) return null;
-                    return (
-                      <span key={id} className="inline-flex items-center gap-1 bg-zinc-900 border border-zinc-800 px-2 py-1 rounded text-[10px] text-zinc-300">
-                        <span className="text-zinc-500 font-mono">#{st.rollNumber}</span>
-                        <span className="font-semibold">{st.name.split(' ')[0]}</span>
-                        <button
-                          type="button"
-                          onClick={() => toggleStudentSelection(id)}
-                          className="text-zinc-500 hover:text-rose-400 font-bold text-[10px] pl-1 transition cursor-pointer"
-                        >
-                          ×
-                        </button>
-                      </span>
-                    );
-                  })}
                 </div>
               </div>
             )}
@@ -369,17 +358,17 @@ export default function TabCGamification({ schoolId, classId, subjectId, bimonth
                 Nenhum aluno disponível.
               </div>
             ) : (
-              leaderboard.map((item, idx) => {
+              leaderboard.map((item) => {
                 let badgeColor = 'bg-zinc-950 text-zinc-400';
                 let medalEmoji = '';
  
-                if (idx === 0) {
+                if (item.rank === 1) {
                   badgeColor = 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/20';
                   medalEmoji = '🏆';
-                } else if (idx === 1) {
+                } else if (item.rank === 2) {
                   badgeColor = 'bg-zinc-300/25 text-zinc-300 border border-zinc-300/10';
                   medalEmoji = '🥈';
-                } else if (idx === 2) {
+                } else if (item.rank === 3) {
                   badgeColor = 'bg-amber-600/25 text-amber-500 border border-amber-600/10';
                   medalEmoji = '🥉';
                 }
@@ -399,7 +388,7 @@ export default function TabCGamification({ schoolId, classId, subjectId, bimonth
                     <div className="flex items-center gap-3">
                       {/* Place index */}
                       <span className={`w-6 h-6 flex items-center justify-center rounded-lg text-xs font-bold font-mono ${badgeColor}`}>
-                        {medalEmoji ? medalEmoji : `${idx + 1}º`}
+                        {medalEmoji ? medalEmoji : `${item.rank}º`}
                       </span>
                       <div>
                         <span className="text-zinc-200 font-semibold text-xs block">{item.student.name}</span>
