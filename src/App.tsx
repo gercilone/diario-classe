@@ -656,7 +656,7 @@ export default function App() {
       try {
         await deleteProfessorFromCloud(usernameToDelete);
         const localList = professors;
-        const updatedList = localList.filter(p => p.username !== usernameToDelete);
+        const updatedList = localList.filter(p => p.username.toLowerCase() !== usernameToDelete.toLowerCase());
         localStorage.setItem('portal_professors_list', JSON.stringify(updatedList));
         setProfessors(updatedList);
       } catch (err) {
@@ -666,7 +666,7 @@ export default function App() {
     } else {
       try {
         await deleteCoordinatorFromCloud(usernameToDelete);
-        const updatedList = coordinators.filter(c => c.username !== usernameToDelete);
+        const updatedList = coordinators.filter(c => c.username.toLowerCase() !== usernameToDelete.toLowerCase());
         localStorage.setItem('portal_coordinators_list', JSON.stringify(updatedList));
         setCoordinators(updatedList);
       } catch (err) {

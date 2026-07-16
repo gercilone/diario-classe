@@ -86,35 +86,40 @@ export async function syncProfessorsListInCloud() {
       cloudList.push(doc.data() as ProfessorAccount);
     });
 
-    // B. Merge with local professors list
-    const localStr = localStorage.getItem('portal_professors_list');
-    let localList: ProfessorAccount[] = [];
-    if (localStr) {
-      try {
-        localList = JSON.parse(localStr);
-      } catch (e) {
-        console.error('Error parsing local professors list:', e);
+    // If the cloud is completely empty, try to seed it from local list, or default list
+    if (cloudList.length === 0) {
+      const localStr = localStorage.getItem('portal_professors_list');
+      let localList: ProfessorAccount[] = [];
+      if (localStr) {
+        try {
+          localList = JSON.parse(localStr);
+        } catch (e) {
+          console.error('Error parsing local professors list:', e);
+        }
       }
-    }
 
-    const mergedMap = new Map<string, ProfessorAccount>();
-    localList.forEach(p => mergedMap.set(p.username.toLowerCase(), p));
-    cloudList.forEach(p => mergedMap.set(p.username.toLowerCase(), p));
+      if (localList.length === 0) {
+        const defaultProf: ProfessorAccount = {
+          username: 'professor',
+          password: '123456',
+          teacherName: 'Gercilone',
+          dbName: 'TeacherDatabase',
+          authEnabled: false
+        };
+        localList = [defaultProf];
+      }
 
-    const mergedList = Array.from(mergedMap.values());
-    localStorage.setItem('portal_professors_list', JSON.stringify(mergedList));
-
-    // C. Upload any local profiles that aren't in the cloud yet
-    for (const localProf of localList) {
-      const usernameLower = localProf.username.toLowerCase();
-      const existsInCloud = cloudList.some(p => p.username.toLowerCase() === usernameLower);
-      if (!existsInCloud) {
-        const cleanedProf = cleanDataForFirestore(localProf);
+      for (const prof of localList) {
+        const usernameLower = prof.username.toLowerCase();
+        const cleanedProf = cleanDataForFirestore(prof);
         await setDoc(doc(dbInstance, 'professors', usernameLower), cleanedProf);
+        cloudList.push(prof);
       }
     }
 
-    return mergedList;
+    // Trust cloudList as the absolute source of truth
+    localStorage.setItem('portal_professors_list', JSON.stringify(cloudList));
+    return cloudList;
   } catch (error) {
     console.error('Error syncing professors list with cloud:', error);
     const localStr = localStorage.getItem('portal_professors_list');
