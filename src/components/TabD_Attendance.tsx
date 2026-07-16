@@ -75,8 +75,8 @@ export default function TabDAttendance({
     const targetClassId = Number(classId);
     const targetSubjectId = Number(subjectId);
     const targetBimonthly = Number(bimonthly);
-    const list = await db.lessons.where('classId').equals(targetClassId).toArray();
-    return list.filter(l => Number(l.subjectId) === targetSubjectId && Number(l.bimonthly) === targetBimonthly);
+    const list = await db.lessons.toArray();
+    return list.filter(l => Number(l.classId) === targetClassId && Number(l.subjectId) === targetSubjectId && Number(l.bimonthly) === targetBimonthly);
   }, [classId, subjectId, bimonthly]) || [];
 
   // Query lesson on selected date
@@ -85,8 +85,8 @@ export default function TabDAttendance({
     const targetClassId = Number(classId);
     const targetSubjectId = Number(subjectId);
     const targetBimonthly = Number(bimonthly);
-    const list = await db.lessons.where('classId').equals(targetClassId).toArray();
-    return list.find(l => Number(l.subjectId) === targetSubjectId && l.date === selectedDate && Number(l.bimonthly) === targetBimonthly);
+    const list = await db.lessons.toArray();
+    return list.find(l => Number(l.classId) === targetClassId && Number(l.subjectId) === targetSubjectId && l.date === selectedDate && Number(l.bimonthly) === targetBimonthly);
   }, [classId, subjectId, selectedDate, bimonthly]);
 
   // Query all attendance for this subject and bimonthly to compute cumulative statistics
@@ -94,16 +94,16 @@ export default function TabDAttendance({
     if (!subjectId) return [];
     const targetSubjectId = Number(subjectId);
     const targetBimonthly = Number(bimonthly);
-    const list = await db.attendance.where('subjectId').equals(targetSubjectId).toArray();
-    return list.filter(a => Number(a.bimonthly) === targetBimonthly);
+    const list = await db.attendance.toArray();
+    return list.filter(a => Number(a.subjectId) === targetSubjectId && Number(a.bimonthly) === targetBimonthly);
   }, [subjectId, bimonthly]) || [];
 
   // Query attendance records for current selected date
   const dailyAttendance = useLiveQuery(async () => {
     if (!subjectId || !selectedDate) return [];
     const targetSubjectId = Number(subjectId);
-    const list = await db.attendance.where('date').equals(selectedDate).toArray();
-    return list.filter(a => Number(a.subjectId) === targetSubjectId);
+    const list = await db.attendance.toArray();
+    return list.filter(a => Number(a.subjectId) === targetSubjectId && a.date === selectedDate);
   }, [subjectId, selectedDate]) || [];
 
   // Sync state with current lesson when selected date or loaded lesson changes
@@ -271,7 +271,7 @@ export default function TabDAttendance({
   }
 
   // Calculate cumulative stats per student
-  const totalLessonsGiven = allLessons.reduce((acc, curr) => acc + curr.lessonCount, 0);
+  const totalLessonsGiven = allLessons.reduce((acc, curr) => acc + (Number(curr.lessonCount) || 0), 0);
 
   const getStudentCumulativeAttendance = (studentId: number) => {
     if (totalLessonsGiven === 0) return { absences: 0, pct: 100 };
