@@ -162,7 +162,7 @@ export default function TabCGamification({ schoolId, classId, subjectId, bimonth
               </button>
             </div>
           </div>
-          <div className="flex flex-wrap gap-2 max-h-40 overflow-y-auto p-1 bg-zinc-950/40 rounded-lg">
+          <div className="flex flex-wrap gap-2 p-1.5 bg-zinc-950/40 rounded-lg">
             {students.map((st) => {
               const totalPoints = scores
                 .filter((s) => s.studentId === st.id)
