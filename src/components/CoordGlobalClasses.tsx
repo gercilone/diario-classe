@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import * as pdfjsLib from 'pdfjs-dist';
 import {
   GlobalSchool,
   GlobalClass,
@@ -24,8 +25,14 @@ import {
   BookOpen, 
   Sparkles, 
   Check, 
-  AlertTriangle 
+  AlertTriangle,
+  FileText,
+  Upload
 } from 'lucide-react';
+
+// Configure PDF.js CDN worker
+const pdfjsVersion = pdfjsLib.version || '4.0.370';
+pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsVersion}/build/pdf.worker.min.mjs`;
 
 export default function CoordGlobalClasses() {
   // Lists from cloud
@@ -58,6 +65,19 @@ export default function CoordGlobalClasses() {
   const [editingStudentName, setEditingStudentName] = useState('');
   const [editingStudentRoll, setEditingStudentRoll] = useState<number | ''>('');
   const [bulkStudentText, setBulkStudentText] = useState('');
+
+  // SIMADE SMART PARSER STATES
+  const [showSimadeImporter, setShowSimadeImporter] = useState(false);
+  const [simadeTab, setSimadeTab] = useState<'pdf' | 'text'>('pdf');
+  const [simadeRawText, setSimadeRawText] = useState('');
+  const [parsingSimade, setParsingSimade] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Parsed Preview States
+  const [parsedSchool, setParsedSchool] = useState('');
+  const [parsedClass, setParsedClass] = useState('');
+  const [parsedStudents, setParsedStudents] = useState<{ name: string; rollNumber: number }[]>([]);
+  const [isSimadeParsed, setIsSimadeParsed] = useState(false);
 
   // Load everything on mount
   useEffect(() => {
@@ -226,7 +246,10 @@ export default function CoordGlobalClasses() {
     if (!newStudentName.trim() || !selectedClassId) return;
 
     setIsLoading(true);
-    const roll = newStudentRoll === '' ? (students.filter(st => st.classId === selectedClassId).length + 1) : Number(newStudentRoll);
+    const classStudents = students.filter(st => st.classId === selectedClassId);
+    const roll = newStudentRoll === '' 
+      ? (classStudents.length > 0 ? Math.max(...classStudents.map(s => s.rollNumber)) + 1 : 1) 
+      : Number(newStudentRoll);
     const newId = 'st_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
     const item: GlobalStudent = {
       id: newId,
@@ -340,6 +363,218 @@ export default function CoordGlobalClasses() {
     }
   };
 
+  // --- SMART SIMADE PARSER METHODS ---
+
+  const handlePdfUpload = async (file: File) => {
+    setParsingSimade(true);
+    try {
+      const reader = new FileReader();
+      reader.onload = async (event) => {
+        try {
+          const typedarray = new Uint8Array(event.target?.result as ArrayBuffer);
+          const pdfjsVersion = pdfjsLib.version || '4.0.370';
+          pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsVersion}/build/pdf.worker.min.mjs`;
+
+          const loadingTask = pdfjsLib.getDocument({ data: typedarray });
+          const pdf = await loadingTask.promise;
+          let extractedText = '';
+
+          for (let i = 1; i <= pdf.numPages; i++) {
+            const page = await pdf.getPage(i);
+            const textContent = await page.getTextContent();
+            const pageText = textContent.items
+              .map((item: any) => item.str)
+              .join(' ');
+            extractedText += pageText + '\n';
+          }
+
+          runSimadeParser(extractedText);
+          showMsg('PDF do Simade lido com sucesso! Verifique e confirme a prévia abaixo.', 'success');
+        } catch (err: any) {
+          console.error('Error parsing PDF content:', err);
+          showMsg('Erro ao ler PDF automaticamente. Mas você pode colar o texto do PDF na aba ao lado!', 'error');
+        } finally {
+          setParsingSimade(false);
+        }
+      };
+      reader.onerror = () => {
+        showMsg('Erro ao ler arquivo do computador.', 'error');
+        setParsingSimade(false);
+      };
+      reader.readAsArrayBuffer(file);
+    } catch (err) {
+      console.error(err);
+      showMsg('Erro ao abrir o arquivo PDF.', 'error');
+      setParsingSimade(false);
+    }
+  };
+
+  const runSimadeParser = (text: string) => {
+    const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+    
+    let schoolName = '';
+    let className = '';
+    const studentsList: { name: string; rollNumber: number }[] = [];
+
+    // Detect School Name: search for indicators
+    for (let i = 0; i < Math.min(15, lines.length); i++) {
+      const line = lines[i];
+      const lower = line.toLowerCase();
+      if (
+        lower.includes('esc ') || 
+        lower.includes('escola') || 
+        lower.includes('colégio') || 
+        lower.includes('colegio') || 
+        lower.includes('centro de ed') || 
+        lower.includes('instituto') ||
+        lower.startsWith('esc ')
+      ) {
+        schoolName = line;
+        break;
+      }
+    }
+    // Fallback
+    if (!schoolName && lines.length > 1) {
+      if (lines[0].toLowerCase().includes('estado do')) {
+        schoolName = lines[1];
+      } else {
+        schoolName = lines[0];
+      }
+    }
+
+    // Detect Class/Turma name
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const lower = line.toLowerCase();
+      if (lower === 'turma' && i + 1 < lines.length) {
+        className = lines[i + 1];
+        break;
+      } else if (lower.startsWith('turma:')) {
+        className = line.substring(6).trim();
+        break;
+      } else if (lower.startsWith('turma ')) {
+        className = line.substring(6).trim();
+        break;
+      }
+    }
+
+    // Detect Students
+    const studentRegex = /^\s*(\d+)\s+([A-ZÀ-ÿ\s'.\-–—]{3,60})$/;
+    const excludeWords = ['página', 'pagina', 'rua', 'avenida', 'telefone', 'email', 'escola', 'estado', 'secretaria', 'educação', 'ensino', 'período', 'periodo', 'série', 'serie', 'turno', 'turma', 'alunos', 'nome', 'aluno', 'tipo', 'ensino', 'letivo'];
+
+    for (const line of lines) {
+      const match = line.match(studentRegex);
+      if (match) {
+        const roll = parseInt(match[1], 10);
+        const name = match[2].trim();
+        const nameLower = name.toLowerCase();
+        
+        const isExcluded = excludeWords.some(w => nameLower === w || nameLower.includes(w)) || 
+                           name.includes('/') || 
+                           name.includes('@') ||
+                           roll > 100;
+
+        if (!isExcluded) {
+          studentsList.push({ name, rollNumber: roll });
+        }
+      }
+    }
+
+    // Sort students by roll number
+    studentsList.sort((a, b) => a.rollNumber - b.rollNumber);
+
+    setParsedSchool(schoolName || 'Escola Detectada');
+    setParsedClass(className || 'Turma Detectada');
+    setParsedStudents(studentsList);
+    setIsSimadeParsed(true);
+  };
+
+  const handleConfirmSimadeImport = async () => {
+    if (!parsedSchool.trim() || !parsedClass.trim() || parsedStudents.length === 0) {
+      showMsg('Dados inválidos para importação.', 'error');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      // 1. School
+      let schoolId = '';
+      const existingSchool = schools.find(s => s.name.trim().toLowerCase() === parsedSchool.trim().toLowerCase());
+      
+      if (existingSchool) {
+        schoolId = existingSchool.id;
+      } else {
+        schoolId = 'sch_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
+        const newSchool: GlobalSchool = { id: schoolId, name: parsedSchool.trim() };
+        await saveGlobalSchool(newSchool);
+        setSchools(prev => [...prev, newSchool]);
+      }
+
+      // 2. Class
+      let classId = '';
+      const existingClass = classes.find(c => c.name.trim().toLowerCase() === parsedClass.trim().toLowerCase() && c.schoolId === schoolId);
+      
+      if (existingClass) {
+        classId = existingClass.id;
+      } else {
+        classId = 'cls_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
+        const newClass: GlobalClass = { id: classId, name: parsedClass.trim(), schoolId };
+        await saveGlobalClass(newClass);
+        setClasses(prev => [...prev, newClass]);
+      }
+
+      // 3. Students
+      const existingStudents = students.filter(st => st.classId === classId);
+      let added = 0;
+      let skipped = 0;
+
+      for (const st of parsedStudents) {
+        const studentExists = existingStudents.some(
+          es => es.name.toLowerCase() === st.name.toLowerCase() || es.rollNumber === st.rollNumber
+        );
+
+        if (!studentExists) {
+          const studentId = 'st_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7) + '_' + added;
+          const newStudent: GlobalStudent = {
+            id: studentId,
+            name: st.name,
+            rollNumber: st.rollNumber,
+            classId
+          };
+          await saveGlobalStudent(newStudent);
+          added++;
+        } else {
+          skipped++;
+        }
+      }
+
+      // Refresh data
+      const updatedStds = await getGlobalStudents();
+      setStudents(updatedStds);
+
+      setSelectedSchoolId(schoolId);
+      setSelectedClassId(classId);
+
+      showMsg(
+        `Sucesso! Turma "${parsedClass}" criada na escola "${parsedSchool}". ${added} alunos novos adicionados de forma oficial.`,
+        'success'
+      );
+
+      // Reset
+      setIsSimadeParsed(false);
+      setParsedStudents([]);
+      setParsedSchool('');
+      setParsedClass('');
+      setSimadeRawText('');
+      setShowSimadeImporter(false);
+    } catch (err) {
+      console.error(err);
+      showMsg('Erro ao salvar dados do Simade na nuvem.', 'error');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   // Filter lists
   const filteredClasses = classes.filter(c => c.schoolId === selectedSchoolId);
   const filteredStudents = students.filter(st => st.classId === selectedClassId);
@@ -383,13 +618,232 @@ export default function CoordGlobalClasses() {
               Os professores poderão anexar diretamente essas turmas prontas nos seus diários de classe, garantindo a padronização e evitando erros de cadastro ou digitação de alunos!
             </p>
           </div>
-          {isLoading && (
-            <div className="flex items-center gap-2 text-xs text-amber-500 font-mono bg-amber-500/10 border border-amber-500/20 px-3 py-1.5 rounded-full animate-pulse">
-              <span>Sincronizando Nuvem...</span>
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 shrink-0">
+            <button
+              onClick={() => {
+                setShowSimadeImporter(!showSimadeImporter);
+                setIsSimadeParsed(false);
+              }}
+              className={`flex items-center justify-center gap-2 px-4 py-2 text-xs font-bold rounded-xl border transition-all cursor-pointer ${
+                showSimadeImporter 
+                  ? 'bg-amber-500 hover:bg-amber-400 text-zinc-950 border-amber-400 font-extrabold shadow-lg shadow-amber-500/15' 
+                  : 'bg-zinc-950/60 hover:bg-zinc-950 border-zinc-800 text-amber-500 hover:border-amber-500/30'
+              }`}
+            >
+              <Sparkles className="w-4 h-4 shrink-0 text-current" />
+              <span>{showSimadeImporter ? 'Fechar Importador' : 'Importar PDF Simade'}</span>
+            </button>
+            {isLoading && (
+              <div className="flex items-center justify-center gap-2 text-xs text-amber-500 font-mono bg-amber-500/10 border border-amber-500/20 px-3 py-1.5 rounded-full animate-pulse">
+                <span>Sincronizando Nuvem...</span>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Smart Simade Importer Panel */}
+      {showSimadeImporter && (
+        <div className="bg-zinc-900 border border-zinc-800 p-6 rounded-2xl space-y-6 animate-in slide-in-from-top-4 duration-300">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-amber-500" />
+              <div>
+                <h4 className="text-white font-bold text-sm">Leitor Inteligente de PDF Simade</h4>
+                <p className="text-[10px] text-zinc-400">Cadastre escolas, turmas e diários oficiais lendo o PDF oficial do Simade</p>
+              </div>
+            </div>
+            <button 
+              onClick={() => {
+                setShowSimadeImporter(false);
+                setIsSimadeParsed(false);
+              }}
+              className="p-1.5 hover:bg-zinc-800 text-zinc-400 hover:text-white rounded-lg transition"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          {!isSimadeParsed ? (
+            <div className="space-y-4">
+              {/* Tabs */}
+              <div className="flex border-b border-zinc-800">
+                <button
+                  onClick={() => setSimadeTab('pdf')}
+                  className={`px-4 py-2 text-xs font-bold border-b-2 transition ${
+                    simadeTab === 'pdf' 
+                      ? 'border-amber-500 text-amber-500 font-extrabold' 
+                      : 'border-transparent text-zinc-400 hover:text-zinc-200'
+                  }`}
+                >
+                  <Upload className="w-3.5 h-3.5 inline mr-1.5" /> Arquivo PDF Oficial (.pdf)
+                </button>
+                <button
+                  onClick={() => setSimadeTab('text')}
+                  className={`px-4 py-2 text-xs font-bold border-b-2 transition ${
+                    simadeTab === 'text' 
+                      ? 'border-amber-500 text-amber-500 font-extrabold' 
+                      : 'border-transparent text-zinc-400 hover:text-zinc-200'
+                  }`}
+                >
+                  <FileText className="w-3.5 h-3.5 inline mr-1.5" /> Copiar & Colar Texto do PDF
+                </button>
+              </div>
+
+              {simadeTab === 'pdf' ? (
+                <div 
+                  onClick={() => fileInputRef.current?.click()}
+                  className="border-2 border-dashed border-zinc-800 hover:border-amber-500/50 bg-zinc-950/40 p-8 rounded-2xl text-center cursor-pointer transition group"
+                >
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    accept="application/pdf"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) handlePdfUpload(file);
+                    }}
+                    className="hidden"
+                  />
+                  <Upload className="w-10 h-10 mx-auto mb-3 text-zinc-500 group-hover:text-amber-500 transition duration-300" />
+                  <p className="text-xs font-bold text-zinc-300">Arraste ou clique para selecionar o PDF do Simade</p>
+                  <p className="text-[10px] text-zinc-500 mt-1">O arquivo será processado 100% no seu navegador de forma privada</p>
+                  {parsingSimade && (
+                    <div className="mt-4 flex items-center justify-center gap-2 text-xs text-amber-500 font-mono animate-pulse">
+                      <span>Processando e lendo conteúdo do PDF...</span>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <p className="text-[10px] text-zinc-400 font-medium">Abra o PDF gerado pelo Simade, selecione tudo (Ctrl+A), copie (Ctrl+C) e cole no campo abaixo:</p>
+                  <textarea
+                    rows={6}
+                    placeholder="Cole aqui o texto copiado do PDF do Simade..."
+                    value={simadeRawText}
+                    onChange={(e) => setSimadeRawText(e.target.value)}
+                    className="bg-zinc-950 border border-zinc-800 text-zinc-200 text-xs rounded-xl p-3.5 w-full focus:ring-1 focus:ring-amber-500 focus:outline-none font-mono"
+                  />
+                  <button
+                    onClick={() => {
+                      if (!simadeRawText.trim()) return;
+                      runSimadeParser(simadeRawText);
+                    }}
+                    disabled={!simadeRawText.trim()}
+                    className="w-full py-2.5 bg-amber-600 hover:bg-amber-500 disabled:opacity-40 text-zinc-950 font-extrabold rounded-xl text-xs transition flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <Sparkles className="w-4 h-4 text-zinc-950" /> Ler e Processar Texto Colado
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : (
+            /* PREVIEW AND EDIT STATE */
+            <div className="space-y-4 bg-zinc-950/40 border border-zinc-800 p-5 rounded-2xl">
+              <div className="flex items-center justify-between border-b border-zinc-800/80 pb-3">
+                <p className="text-xs font-bold text-amber-500 uppercase tracking-wider flex items-center gap-1">
+                  <Check className="w-4 h-4" /> Prévia dos Dados Identificados no Simade
+                </p>
+                <button 
+                  onClick={() => {
+                    setIsSimadeParsed(false);
+                    setParsedStudents([]);
+                  }} 
+                  className="text-[10px] text-zinc-400 hover:text-zinc-200 font-semibold"
+                >
+                  Tentar Outro Arquivo
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-[10px] text-zinc-400 font-bold uppercase">Nome da Escola:</label>
+                  <input
+                    type="text"
+                    value={parsedSchool}
+                    onChange={(e) => setParsedSchool(e.target.value)}
+                    className="bg-zinc-900 border border-zinc-800 text-zinc-200 text-xs rounded-xl px-3 py-2 w-full focus:ring-1 focus:ring-amber-500 focus:outline-none font-medium"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[10px] text-zinc-400 font-bold uppercase">Nome da Turma:</label>
+                  <input
+                    type="text"
+                    value={parsedClass}
+                    onChange={(e) => setParsedClass(e.target.value)}
+                    className="bg-zinc-900 border border-zinc-800 text-zinc-200 text-xs rounded-xl px-3 py-2 w-full focus:ring-1 focus:ring-amber-500 focus:outline-none font-medium"
+                  />
+                </div>
+              </div>
+
+              {/* Students Table/List */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <p className="text-[10px] text-zinc-400 font-bold uppercase">Lista de Alunos Oficial ({parsedStudents.length} alunos):</p>
+                  <p className="text-[9px] text-zinc-500">Os alunos estão ordenados pelo número de chamada do diário</p>
+                </div>
+                
+                <div className="max-h-60 overflow-y-auto divide-y divide-zinc-855 bg-zinc-950/60 rounded-xl border border-zinc-800 p-2">
+                  {parsedStudents.map((st, idx) => (
+                    <div key={idx} className="flex items-center justify-between py-1.5 px-2 hover:bg-zinc-900/50 rounded-lg text-xs gap-3">
+                      <div className="flex items-center gap-2.5 w-full">
+                        <span className="font-mono text-[10px] font-bold text-amber-500 bg-amber-500/5 border border-amber-500/10 w-5 h-5 rounded flex items-center justify-center shrink-0">
+                          {st.rollNumber}
+                        </span>
+                        <input
+                          type="text"
+                          value={st.name}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setParsedStudents(prev => prev.map((item, i) => i === idx ? { ...item, name: val } : item));
+                          }}
+                          className="bg-transparent border-0 hover:bg-zinc-900/80 focus:bg-zinc-900 text-zinc-200 text-xs rounded px-1.5 py-0.5 w-full focus:outline-none focus:ring-1 focus:ring-amber-500"
+                        />
+                      </div>
+                      <button
+                        onClick={() => {
+                          setParsedStudents(prev => prev.filter((_, i) => i !== idx));
+                        }}
+                        className="p-1 text-zinc-500 hover:text-rose-400 transition"
+                        title="Remover aluno"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Attention Info */}
+              <div className="p-3 bg-amber-500/5 border border-amber-500/10 rounded-xl flex gap-2.5 text-[11px] text-zinc-400">
+                <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+                <div className="space-y-0.5">
+                  <p className="font-bold text-zinc-300">Consistência dos Números de Chamada:</p>
+                  <p>Os números originais foram identificados com sucesso (ex: Arthur Henrique começará no número 3). Não haverá preenchimento automático para os números 1 e 2, mantendo a chamada oficial intocável e garantindo total correspondência com o Simade.</p>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <button
+                  onClick={() => {
+                    setIsSimadeParsed(false);
+                    setParsedStudents([]);
+                  }}
+                  className="px-4 py-2 text-xs font-semibold text-zinc-400 hover:text-zinc-200"
+                >
+                  Voltar
+                </button>
+                <button
+                  onClick={handleConfirmSimadeImport}
+                  className="px-5 py-2 bg-amber-500 hover:bg-amber-400 text-zinc-950 font-extrabold text-xs rounded-xl transition shadow-md cursor-pointer flex items-center gap-1.5"
+                >
+                  <Check className="w-4 h-4 text-zinc-950" /> Confirmar e Salvar na Nuvem
+                </button>
+              </div>
             </div>
           )}
         </div>
-      </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         

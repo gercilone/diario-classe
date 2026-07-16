@@ -200,7 +200,7 @@ export default function App() {
     }
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     sessionStorage.removeItem('portal_is_authenticated');
     localStorage.removeItem('portal_is_authenticated_persistent');
     localStorage.removeItem('portal_active_user');
@@ -216,12 +216,29 @@ export default function App() {
     localStorage.removeItem('portal_security_question');
     localStorage.removeItem('portal_security_answer');
     
+    // Clear IndexedDB local database tables on logout
+    try {
+      const tables = [
+        'schools', 'classes', 'subjects', 'students', 'subjectWorkloads',
+        'lessons', 'attendances', 'vistos', 'evaluations', 'grades',
+        'positivesNegatives', 'gamificationPoints', 'gamificationHistory',
+        'gamificationStore', 'gamificationInventory'
+      ];
+      for (const tableName of tables) {
+        if ((db as any)[tableName]) {
+          await (db as any)[tableName].clear();
+        }
+      }
+    } catch (err) {
+      console.error('Error clearing database on logout:', err);
+    }
+
     setSelectedProf(null);
     setIsAuthenticated(false);
     window.location.reload();
   };
 
-  const handleLoginSubmit = (e: React.FormEvent) => {
+  const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const u = loginUser.trim().toLowerCase();
     const p = loginPass;
@@ -282,6 +299,8 @@ export default function App() {
 
     if (matchingProf) {
       if (p === matchingProf.password) {
+        setLoginError('Restaurando seus diários de classe da nuvem... Por favor, aguarde.');
+        
         localStorage.setItem('portal_active_user', matchingProf.username);
         localStorage.setItem('portal_active_user_db', matchingProf.dbName);
         localStorage.setItem('portal_user_role', 'teacher');
@@ -300,6 +319,36 @@ export default function App() {
           sessionStorage.setItem('portal_is_authenticated', 'true');
         }
         localStorage.setItem('portal_force_cloud_pull', 'true');
+
+        // UNCONDITIONAL DATABASE RESTORE DURING LOGIN
+        try {
+          // Clear all local tables to avoid merging with other teachers' cached records
+          const tables = [
+            'schools', 'classes', 'subjects', 'students', 'subjectWorkloads',
+            'lessons', 'attendances', 'vistos', 'evaluations', 'grades',
+            'positivesNegatives', 'gamificationPoints', 'gamificationHistory',
+            'gamificationStore', 'gamificationInventory'
+          ];
+          for (const tableName of tables) {
+            if ((db as any)[tableName]) {
+              await (db as any)[tableName].clear();
+            }
+          }
+
+          // Pull fresh
+          await pullTeacherDataFromCloud(matchingProf.username, db);
+
+          // Seed default demo data ONLY if this is a completely blank account in cloud
+          const schoolCount = await db.schools.count();
+          if (schoolCount === 0) {
+            await seedDatabase();
+            // Store seed in cloud so they start synchronized
+            await pushTeacherDataToCloud(matchingProf.username, db);
+          }
+        } catch (err) {
+          console.error('Error restoring cloud data on login:', err);
+        }
+
         setLoginError('');
         setIsAuthenticated(true);
         setUserRole('teacher');
