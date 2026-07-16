@@ -360,6 +360,51 @@ export default function CoordGlobalClasses() {
 
   // --- SMART SIMADE PARSER METHODS ---
 
+  const reconstructLines = (items: any[]): string[] => {
+    // Group items that are close vertically
+    const linesMap: { [y: number]: any[] } = {};
+    
+    for (const item of items) {
+      if (!item.str || !item.transform) continue;
+      
+      const y = item.transform[5];
+      
+      // Find if there's a group with a close y coordinate (within 5 units tolerance)
+      let found = false;
+      for (const keyStr of Object.keys(linesMap)) {
+        const keyY = parseFloat(keyStr);
+        if (Math.abs(keyY - y) < 5) {
+          linesMap[keyY].push(item);
+          found = true;
+          break;
+        }
+      }
+      
+      if (!found) {
+        linesMap[y] = [item];
+      }
+    }
+    
+    // Sort the keys (Y coordinate) descending (from top of page to bottom)
+    const sortedYKeys = Object.keys(linesMap)
+      .map(Number)
+      .sort((a, b) => b - a);
+      
+    const reconstructed: string[] = [];
+    
+    for (const y of sortedYKeys) {
+      // Sort items within the same line from left to right (X ascending, transform[4] is X coordinate)
+      const lineItems = linesMap[y].sort((a, b) => a.transform[4] - b.transform[4]);
+      // Join items with a space
+      const lineText = lineItems.map(item => item.str).join(' ').replace(/\s+/g, ' ').trim();
+      if (lineText) {
+        reconstructed.push(lineText);
+      }
+    }
+    
+    return reconstructed;
+  };
+
   const loadPdfJS = (): Promise<any> => {
     return new Promise((resolve, reject) => {
       if ((window as any).pdfjsLib) {
@@ -369,11 +414,22 @@ export default function CoordGlobalClasses() {
       const script = document.createElement('script');
       script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
       script.async = true;
-      script.onload = () => {
+      script.onload = async () => {
         const pdfjs = (window as any).pdfjsLib;
         if (pdfjs) {
-          pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-          resolve(pdfjs);
+          try {
+            // Fetch the worker file and create a Blob URL to avoid same-origin restrictions on Web Workers inside iframes
+            const response = await fetch('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js');
+            const workerCode = await response.text();
+            const blob = new Blob([workerCode], { type: 'application/javascript' });
+            const workerUrl = URL.createObjectURL(blob);
+            pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
+            resolve(pdfjs);
+          } catch (workerErr) {
+            console.warn('Failed to load PDF worker via Blob fetch. Falling back to direct URL.', workerErr);
+            pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+            resolve(pdfjs);
+          }
         } else {
           reject(new Error('Failed to load pdfjsLib from CDN'));
         }
@@ -398,10 +454,8 @@ export default function CoordGlobalClasses() {
           for (let i = 1; i <= pdf.numPages; i++) {
             const page = await pdf.getPage(i);
             const textContent = await page.getTextContent();
-            const pageText = textContent.items
-              .map((item: any) => item.str)
-              .join(' ');
-            extractedText += pageText + '\n';
+            const pageLines = reconstructLines(textContent.items);
+            extractedText += pageLines.join('\n') + '\n';
           }
 
           runSimadeParser(extractedText);
