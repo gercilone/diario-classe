@@ -113,8 +113,9 @@ export default function TabDAttendance({
       return;
     }
     if (currentLesson) {
-      setLessonCount(currentLesson.lessonCount);
-      setContent(currentLesson.content);
+      const count = Number(currentLesson.lessonCount);
+      setLessonCount(isNaN(count) || count <= 0 ? 2 : count);
+      setContent(currentLesson.content || '');
       setIsSaved(true);
     } else {
       setLessonCount(2);
@@ -271,7 +272,10 @@ export default function TabDAttendance({
   }
 
   // Calculate cumulative stats per student
-  const totalLessonsGiven = allLessons.reduce((acc, curr) => acc + (Number(curr.lessonCount) || 2), 0);
+  const totalLessonsGiven = allLessons.reduce((acc, curr) => {
+    const count = Number(curr.lessonCount);
+    return acc + (isNaN(count) || count <= 0 ? 2 : count);
+  }, 0);
 
   const getStudentCumulativeAttendance = (studentId: number) => {
     if (totalLessonsGiven === 0) return { absences: 0, pct: 100 };
@@ -289,28 +293,32 @@ export default function TabDAttendance({
   const handleSaveLesson = async (e: FormEvent) => {
     e.preventDefault();
     try {
+      const safeCount = Number(lessonCount) || 2;
+      const safeContent = content ? content.trim() : '';
+      const safeBimonthly = Number(bimonthly) || 1;
+
       if (editingLessonId !== undefined) {
         await db.lessons.update(editingLessonId, {
           date: selectedDate,
-          lessonCount: Number(lessonCount),
-          content: content.trim(),
-          bimonthly: Number(bimonthly),
+          lessonCount: safeCount,
+          content: safeContent,
+          bimonthly: safeBimonthly,
         });
         setEditingLessonId(undefined);
       } else if (currentLesson) {
         await db.lessons.update(currentLesson.id!, {
-          lessonCount: Number(lessonCount),
-          content: content.trim(),
-          bimonthly: Number(bimonthly),
+          lessonCount: safeCount,
+          content: safeContent,
+          bimonthly: safeBimonthly,
         });
       } else {
         await db.lessons.add({
           classId: Number(classId),
           subjectId: Number(subjectId),
           date: selectedDate,
-          bimonthly: Number(bimonthly),
-          lessonCount: Number(lessonCount),
-          content: content.trim(),
+          bimonthly: safeBimonthly,
+          lessonCount: safeCount,
+          content: safeContent,
         });
       }
       setIsSaved(true);
@@ -321,10 +329,11 @@ export default function TabDAttendance({
   };
 
   const handleEditLesson = (lesson: Lesson) => {
+    const count = Number(lesson.lessonCount);
     setEditingLessonId(lesson.id);
     setSelectedDate(lesson.date);
-    setLessonCount(lesson.lessonCount);
-    setContent(lesson.content);
+    setLessonCount(isNaN(count) || count <= 0 ? 2 : count);
+    setContent(lesson.content || '');
     setIsSaved(false);
   };
 
@@ -363,8 +372,8 @@ export default function TabDAttendance({
         await db.attendance.add({
           studentId,
           date: selectedDate,
-          subjectId,
-          bimonthly,
+          subjectId: Number(subjectId),
+          bimonthly: Number(bimonthly),
           absences: count,
         });
       }
@@ -609,7 +618,7 @@ export default function TabDAttendance({
 
           {/* Progress Card */}
           {(() => {
-            const targetBimonthlyLessons = currentWorkload ? Math.round(currentWorkload.totalLessons / 4) : 40;
+            const targetBimonthlyLessons = currentWorkload ? currentWorkload.totalLessons : 40;
             const sortedLessons = [...allLessons].sort((a, b) => b.date.localeCompare(a.date));
             const formatLessonDate = (dateStr: string) => {
               if (!dateStr) return '';
