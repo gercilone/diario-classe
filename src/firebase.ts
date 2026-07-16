@@ -353,3 +353,155 @@ export async function deleteProfessorFromCloud(username: string) {
     console.error('Error deleting professor from cloud:', error);
   }
 }
+
+// 4. GLOBAL SHARED SCHOOLS, CLASSES & STUDENTS (Managed by Coordinator, attached by teachers)
+
+export interface GlobalSchool {
+  id: string;
+  name: string;
+}
+
+export interface GlobalClass {
+  id: string;
+  name: string;
+  schoolId: string;
+}
+
+export interface GlobalStudent {
+  id: string;
+  name: string;
+  rollNumber: number;
+  classId: string;
+}
+
+export async function getGlobalSchools(): Promise<GlobalSchool[]> {
+  const dbInstance = getFirestoreInstance();
+  if (!dbInstance) return [];
+  try {
+    const colRef = collection(dbInstance, 'global_schools');
+    const snapshot = await getDocs(colRef);
+    const schools: GlobalSchool[] = [];
+    snapshot.forEach((doc) => {
+      schools.push({ ...doc.data() as GlobalSchool, id: doc.id });
+    });
+    return schools;
+  } catch (error) {
+    console.error('Error getting global schools:', error);
+    return [];
+  }
+}
+
+export async function saveGlobalSchool(school: GlobalSchool): Promise<void> {
+  const dbInstance = getFirestoreInstance();
+  if (!dbInstance) return;
+  try {
+    const docRef = doc(dbInstance, 'global_schools', school.id);
+    await setDoc(docRef, cleanDataForFirestore(school));
+  } catch (error) {
+    console.error('Error saving global school:', error);
+  }
+}
+
+export async function deleteGlobalSchool(schoolId: string): Promise<void> {
+  const dbInstance = getFirestoreInstance();
+  if (!dbInstance) return;
+  try {
+    await deleteDoc(doc(dbInstance, 'global_schools', schoolId));
+
+    const classesCol = collection(dbInstance, 'global_classes');
+    const classesSnapshot = await getDocs(classesCol);
+    for (const d of classesSnapshot.docs) {
+      const clsData = d.data();
+      if (clsData.schoolId === schoolId) {
+        await deleteGlobalClass(d.id);
+      }
+    }
+  } catch (error) {
+    console.error('Error deleting global school:', error);
+  }
+}
+
+export async function getGlobalClasses(): Promise<GlobalClass[]> {
+  const dbInstance = getFirestoreInstance();
+  if (!dbInstance) return [];
+  try {
+    const colRef = collection(dbInstance, 'global_classes');
+    const snapshot = await getDocs(colRef);
+    const classes: GlobalClass[] = [];
+    snapshot.forEach((doc) => {
+      classes.push({ ...doc.data() as GlobalClass, id: doc.id });
+    });
+    return classes;
+  } catch (error) {
+    console.error('Error getting global classes:', error);
+    return [];
+  }
+}
+
+export async function saveGlobalClass(cls: GlobalClass): Promise<void> {
+  const dbInstance = getFirestoreInstance();
+  if (!dbInstance) return;
+  try {
+    const docRef = doc(dbInstance, 'global_classes', cls.id);
+    await setDoc(docRef, cleanDataForFirestore(cls));
+  } catch (error) {
+    console.error('Error saving global class:', error);
+  }
+}
+
+export async function deleteGlobalClass(classId: string): Promise<void> {
+  const dbInstance = getFirestoreInstance();
+  if (!dbInstance) return;
+  try {
+    await deleteDoc(doc(dbInstance, 'global_classes', classId));
+
+    const studentsCol = collection(dbInstance, 'global_students');
+    const studentsSnapshot = await getDocs(studentsCol);
+    for (const d of studentsSnapshot.docs) {
+      const studData = d.data();
+      if (studData.classId === classId) {
+        await deleteDoc(doc(dbInstance, 'global_students', d.id));
+      }
+    }
+  } catch (error) {
+    console.error('Error deleting global class:', error);
+  }
+}
+
+export async function getGlobalStudents(): Promise<GlobalStudent[]> {
+  const dbInstance = getFirestoreInstance();
+  if (!dbInstance) return [];
+  try {
+    const colRef = collection(dbInstance, 'global_students');
+    const snapshot = await getDocs(colRef);
+    const students: GlobalStudent[] = [];
+    snapshot.forEach((doc) => {
+      students.push({ ...doc.data() as GlobalStudent, id: doc.id });
+    });
+    return students.sort((a, b) => a.rollNumber - b.rollNumber || a.name.localeCompare(b.name));
+  } catch (error) {
+    console.error('Error getting global students:', error);
+    return [];
+  }
+}
+
+export async function saveGlobalStudent(student: GlobalStudent): Promise<void> {
+  const dbInstance = getFirestoreInstance();
+  if (!dbInstance) return;
+  try {
+    const docRef = doc(dbInstance, 'global_students', student.id);
+    await setDoc(docRef, cleanDataForFirestore(student));
+  } catch (error) {
+    console.error('Error saving global student:', error);
+  }
+}
+
+export async function deleteGlobalStudent(studentId: string): Promise<void> {
+  const dbInstance = getFirestoreInstance();
+  if (!dbInstance) return;
+  try {
+    await deleteDoc(doc(dbInstance, 'global_students', studentId));
+  } catch (error) {
+    console.error('Error deleting global student:', error);
+  }
+}

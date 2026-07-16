@@ -8,7 +8,8 @@ import TabCGamification from './components/TabC_Gamification';
 import TabDAttendance from './components/TabD_Attendance';
 import TabEReports from './components/TabE_Reports';
 import TabFSettings from './components/TabF_Settings';
-import { FileText, CheckSquare, Trophy, Calendar, FileBarChart2, Settings, Sparkles, Lock, User, Eye, EyeOff, LogOut, Key, AlertTriangle, Plus, ShieldAlert, Shield, Search, UserPlus, Trash2, ArrowLeft, Check, LogIn, Users, Pencil, X } from 'lucide-react';
+import CoordGlobalClasses from './components/CoordGlobalClasses';
+import { FileText, CheckSquare, Trophy, Calendar, FileBarChart2, Settings, Sparkles, Lock, User, Eye, EyeOff, LogOut, Key, AlertTriangle, Plus, ShieldAlert, Shield, Search, UserPlus, Trash2, ArrowLeft, Check, LogIn, Users, Pencil, X, School, BookOpen } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   deleteProfessorFromCloud,
@@ -130,7 +131,7 @@ export default function App() {
   });
 
   // Coordinator dashboard states
-  const [coordActiveTab, setCoordActiveTab] = useState<'inspect' | 'accounts'>('inspect');
+  const [coordActiveTab, setCoordActiveTab] = useState<'inspect' | 'accounts' | 'global-classes'>('inspect');
   const [searchTeacherQuery, setSearchTeacherQuery] = useState('');
   
   // Coordinator Account creation form
@@ -298,6 +299,7 @@ export default function App() {
         } else {
           sessionStorage.setItem('portal_is_authenticated', 'true');
         }
+        localStorage.setItem('portal_force_cloud_pull', 'true');
         setLoginError('');
         setIsAuthenticated(true);
         setUserRole('teacher');
@@ -352,6 +354,7 @@ export default function App() {
       sessionStorage.setItem('portal_is_authenticated', 'true');
     }
 
+    localStorage.setItem('portal_force_cloud_pull', 'true');
     setLoginError('');
     setIsAuthenticated(true);
     setUserRole('teacher');
@@ -788,13 +791,18 @@ export default function App() {
       if (activeUser && isAuthenticated && (role === 'teacher' || inspecting)) {
         try {
           const schoolCount = await db.schools.count();
-          const shouldPull = inspecting ? needsInspectPull : (schoolCount === 0);
+          const forcePull = localStorage.getItem('portal_force_cloud_pull') === 'true';
+          const shouldPull = inspecting ? needsInspectPull : (schoolCount === 0 || forcePull);
 
           if (shouldPull) {
             setIsInitialSyncing(true);
             setSyncStatusMessage(`Sincronizando com a Nuvem... Buscando diário de classe de @${activeUser}...`);
             
             await pullTeacherDataFromCloud(activeUser, db);
+
+            if (forcePull) {
+              localStorage.removeItem('portal_force_cloud_pull');
+            }
 
             if (inspecting && needsInspectPull) {
               localStorage.removeItem('portal_needs_inspect_pull');
@@ -1345,12 +1353,24 @@ export default function App() {
             >
               <UserPlus className="w-4 h-4" /> Gerenciar Contas
             </button>
+            <button
+              onClick={() => setCoordActiveTab('global-classes')}
+              className={`px-4 py-3 font-bold text-xs border-b-2 transition flex items-center gap-2 cursor-pointer ${
+                coordActiveTab === 'global-classes' ? 'border-amber-500 text-amber-400 bg-amber-500/5' : 'border-transparent text-zinc-400 hover:text-zinc-300'
+              }`}
+            >
+              <School className="w-4 h-4" /> Turmas & Alunos Globais
+            </button>
           </div>
         </div>
 
         {/* Dashboard Content */}
         <main className="flex-1 max-w-7xl w-full mx-auto p-4 md:p-6 pb-20">
-          {coordActiveTab === 'inspect' ? (
+          {coordActiveTab === 'global-classes' && (
+            <CoordGlobalClasses />
+          )}
+
+          {coordActiveTab === 'inspect' && (
             /* INSPECT MODE: List all teachers for inspection */
             <div className="space-y-6">
               <div className="bg-zinc-900 border border-zinc-800 p-6 rounded-2xl space-y-4">
@@ -1413,7 +1433,9 @@ export default function App() {
                 </div>
               </div>
             </div>
-          ) : (
+          )}
+
+          {coordActiveTab === 'accounts' && (
             /* ACCOUNTS MODE: Create and delete accounts */
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               {/* Card 1: Account Creation Form */}

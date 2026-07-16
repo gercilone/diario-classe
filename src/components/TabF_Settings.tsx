@@ -3,7 +3,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { db, seedDatabase, setCloudSyncDisabled } from '../db';
 import { School, Class, Subject, Student, SubjectWorkload, WeeklySchedule } from '../types';
 import { Plus, Trash2, Edit2, X, Import, Download, Upload, Calendar, Clock, BookOpen, School as SchoolIcon, Users, Settings, Database, Check, AlertTriangle, Sparkles, Save, User, Lock, Shield, Eye, EyeOff, Cloud, CloudUpload, CloudDownload } from 'lucide-react';
-import { pushTeacherDataToCloud, pullTeacherDataFromCloud } from '../firebase';
+import { pushTeacherDataToCloud, pullTeacherDataFromCloud, getGlobalSchools, getGlobalClasses, getGlobalStudents } from '../firebase';
 
 interface TabFSettingsProps {
   teacherName: string;
@@ -13,7 +13,7 @@ interface TabFSettingsProps {
 }
 
 export default function TabFSettings({ teacherName, setTeacherName, onSecuritySaved, isReadOnly = false }: TabFSettingsProps) {
-  const [activeSubTab, setActiveSubTab] = useState<'perfil' | 'cadastros' | 'grade' | 'backup'>('perfil');
+  const [activeSubTab, setActiveSubTab] = useState<'perfil' | 'cadastros' | 'grade' | 'backup' | 'turmas-globais'>('perfil');
 
   // PROFILE & SECURITY STATES
   const [profileName, setProfileName] = useState(teacherName);
@@ -85,6 +85,124 @@ export default function TabFSettings({ teacherName, setTeacherName, onSecuritySa
     message: string;
     onClose?: () => void;
   } | null>(null);
+
+  // GLOBAL SHARED CLASSES STATES (FOR TEACHERS)
+  const [globalSchools, setGlobalSchools] = useState<any[]>([]);
+  const [globalClasses, setGlobalClasses] = useState<any[]>([]);
+  const [globalStudents, setGlobalStudents] = useState<any[]>([]);
+  const [loadingGlobals, setLoadingGlobals] = useState(false);
+  const [selectedGlobalSchoolId, setSelectedGlobalSchoolId] = useState('');
+  const [attachingClassId, setAttachingClassId] = useState<string | null>(null);
+
+  const loadGlobalData = async () => {
+    setLoadingGlobals(true);
+    try {
+      const schs = await getGlobalSchools();
+      const cls = await getGlobalClasses();
+      const stds = await getGlobalStudents();
+      setGlobalSchools(schs);
+      setGlobalClasses(cls);
+      setGlobalStudents(stds);
+
+      if (schs.length > 0 && !selectedGlobalSchoolId) {
+        setSelectedGlobalSchoolId(schs[0].id);
+      }
+    } catch (err) {
+      console.error('Error loading global data for teachers:', err);
+    } finally {
+      setLoadingGlobals(false);
+    }
+  };
+
+  const handleAttachGlobalClass = async (cls: any) => {
+    setAttachingClassId(cls.id);
+    try {
+      // 1. Get corresponding global school name
+      const globalSchool = globalSchools.find(s => s.id === cls.schoolId);
+      if (!globalSchool) {
+        setAlertDialog({
+          isOpen: true,
+          title: 'Erro de Vínculo',
+          message: 'Não foi possível encontrar a escola associada a esta turma na nuvem.'
+        });
+        return;
+      }
+
+      // 2. Find or create local school in Dexie DB
+      let localSchool = schools.find(s => s.name.toLowerCase() === globalSchool.name.toLowerCase());
+      let localSchoolId: number;
+      if (localSchool) {
+        localSchoolId = localSchool.id!;
+      } else {
+        localSchoolId = await db.schools.add({ name: globalSchool.name });
+      }
+
+      // 3. Find or create local class
+      let localClass = classes.find(c => c.name.toLowerCase() === cls.name.toLowerCase() && c.schoolId === localSchoolId);
+      let localClassId: number;
+      if (localClass) {
+        localClassId = localClass.id!;
+      } else {
+        localClassId = await db.classes.add({ name: cls.name, schoolId: localSchoolId });
+      }
+
+      // 4. Get global students of this global class
+      const classStudents = globalStudents.filter(st => st.classId === cls.id);
+
+      // 5. Add them to the local database, preventing duplicates by name
+      let addedCount = 0;
+      let skippedCount = 0;
+
+      const currentLocalStudents = await db.students.where({ classId: localClassId }).toArray();
+
+      for (const st of classStudents) {
+        const studentExists = currentLocalStudents.some(
+          localSt => localSt.name.toLowerCase() === st.name.toLowerCase()
+        );
+
+        if (!studentExists) {
+          await db.students.add({
+            classId: localClassId,
+            name: st.name,
+            rollNumber: st.rollNumber
+          });
+          addedCount++;
+        } else {
+          skippedCount++;
+        }
+      }
+
+      // Force push teacher data to cloud
+      const activeUser = localStorage.getItem('portal_active_user');
+      if (activeUser) {
+        await pushTeacherDataToCloud(activeUser, db);
+      }
+
+      setAlertDialog({
+        isOpen: true,
+        title: 'Turma Anexada!',
+        message: `A turma "${cls.name}" da escola "${globalSchool.name}" foi integrada com sucesso! ${addedCount} alunos cadastrados. ${skippedCount > 0 ? `(${skippedCount} alunos já existiam e foram mesclados no seu diário)` : ''}`
+      });
+
+    } catch (err) {
+      console.error('Error attaching global class:', err);
+      setAlertDialog({
+        isOpen: true,
+        title: 'Erro ao Anexar',
+        message: 'Ocorreu um erro ao processar a importação da turma global.'
+      });
+    } finally {
+      setAttachingClassId(null);
+    }
+  };
+
+  // Trigger loading when tab is selected
+  const handleSetSubTabAndLoad = (tab: any) => {
+    setActiveSubTab(tab);
+    if (tab === 'turmas-globais') {
+      loadGlobalData();
+    }
+  };
 
   // DATABASE STATES FOR RENDERING
   const schools = useLiveQuery(() => db.schools.toArray()) || [];
@@ -1356,7 +1474,7 @@ export default function TabFSettings({ teacherName, setTeacherName, onSecuritySa
       <div className="flex border-b border-zinc-800 overflow-x-auto scrollbar-none">
         <button
           id="subtab-perfil-btn"
-          onClick={() => setActiveSubTab('perfil')}
+          onClick={() => handleSetSubTabAndLoad('perfil')}
           className={`px-4 py-3 font-medium text-sm border-b-2 transition-colors flex items-center gap-2 cursor-pointer shrink-0 ${
             activeSubTab === 'perfil'
               ? 'border-blue-500 text-blue-400 bg-blue-500/5'
@@ -1368,7 +1486,7 @@ export default function TabFSettings({ teacherName, setTeacherName, onSecuritySa
         </button>
         <button
           id="subtab-cadastros-btn"
-          onClick={() => setActiveSubTab('cadastros')}
+          onClick={() => handleSetSubTabAndLoad('cadastros')}
           className={`px-4 py-3 font-medium text-sm border-b-2 transition-colors flex items-center gap-2 cursor-pointer shrink-0 ${
             activeSubTab === 'cadastros'
               ? 'border-blue-500 text-blue-400 bg-blue-500/5'
@@ -1380,7 +1498,7 @@ export default function TabFSettings({ teacherName, setTeacherName, onSecuritySa
         </button>
         <button
           id="subtab-grade-btn"
-          onClick={() => setActiveSubTab('grade')}
+          onClick={() => handleSetSubTabAndLoad('grade')}
           className={`px-4 py-3 font-medium text-sm border-b-2 transition-colors flex items-center gap-2 cursor-pointer ${
             activeSubTab === 'grade'
               ? 'border-blue-500 text-blue-400 bg-blue-500/5'
@@ -1392,7 +1510,7 @@ export default function TabFSettings({ teacherName, setTeacherName, onSecuritySa
         </button>
         <button
           id="subtab-backup-btn"
-          onClick={() => setActiveSubTab('backup')}
+          onClick={() => handleSetSubTabAndLoad('backup')}
           className={`px-4 py-3 font-medium text-sm border-b-2 transition-colors flex items-center gap-2 cursor-pointer ${
             activeSubTab === 'backup'
               ? 'border-blue-500 text-blue-400 bg-blue-500/5'
@@ -1401,6 +1519,18 @@ export default function TabFSettings({ teacherName, setTeacherName, onSecuritySa
         >
           <Database className="w-4 h-4" />
           Backup & Importação
+        </button>
+        <button
+          id="subtab-turmas-globais-btn"
+          onClick={() => handleSetSubTabAndLoad('turmas-globais')}
+          className={`px-4 py-3 font-medium text-sm border-b-2 transition-colors flex items-center gap-2 cursor-pointer shrink-0 ${
+            activeSubTab === 'turmas-globais'
+              ? 'border-blue-500 text-blue-400 bg-blue-500/5'
+              : 'border-transparent text-zinc-400 hover:text-zinc-300 hover:bg-white/5'
+          }`}
+        >
+          <SchoolIcon className="w-4 h-4 text-amber-500" />
+          Anexar Turmas Globais
         </button>
       </div>
 
@@ -2545,6 +2675,141 @@ export default function TabFSettings({ teacherName, setTeacherName, onSecuritySa
             >
               <Sparkles className="w-4 h-4" /> Carregar Dados de Demonstração
             </button>
+          </div>
+
+        </div>
+      )}
+
+      {activeSubTab === 'turmas-globais' && (
+        <div id="settings-turmas-globais-section" className="space-y-6 animate-in fade-in duration-150">
+          
+          <div className="bg-zinc-900 border border-zinc-800 p-6 rounded-2xl space-y-4">
+            <h3 className="text-white font-bold text-sm flex items-center gap-2">
+              <SchoolIcon className="w-5 h-5 text-amber-500" /> Vincular Turmas Cadastradas pelo Coordenador
+            </h3>
+            <p className="text-xs text-zinc-400 leading-relaxed">
+              Aqui você pode anexar ao seu diário de classe local as turmas oficiais registradas pela coordenação. 
+              Ao anexar uma turma, ela e todos os seus alunos oficiais serão automaticamente adicionados à sua lista de cadastros locais de forma idêntica e sem erros de digitação!
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            {/* LHS: Select School and Class list */}
+            <div className="lg:col-span-5 space-y-4">
+              <div className="bg-zinc-900 border border-zinc-800 p-5 rounded-2xl space-y-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-zinc-400">1. Selecione a Escola</label>
+                  <select
+                    value={selectedGlobalSchoolId}
+                    onChange={(e) => setSelectedGlobalSchoolId(e.target.value)}
+                    className="w-full bg-zinc-950 border border-zinc-855 text-zinc-200 text-xs rounded-xl px-3 py-2.5 focus:outline-none focus:ring-1 focus:ring-amber-500 cursor-pointer"
+                  >
+                    <option value="">-- Selecionar Escola da Nuvem --</option>
+                    {globalSchools.map((s) => (
+                      <option key={s.id} value={s.id}>{s.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="border-t border-zinc-850 pt-4 space-y-2">
+                  <label className="text-xs font-bold text-zinc-400 block mb-2">2. Turmas Oficiais Disponíveis</label>
+                  
+                  {loadingGlobals ? (
+                    <div className="text-center py-8 text-zinc-500 font-mono text-xs animate-pulse">
+                      Carregando turmas oficiais...
+                    </div>
+                  ) : (
+                    <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
+                      {globalClasses
+                        .filter(c => c.schoolId === selectedGlobalSchoolId)
+                        .map((cls) => {
+                          const studentCount = globalStudents.filter(st => st.classId === cls.id).length;
+                          const isAttached = classes.some(localCls => {
+                            const localSch = schools.find(s => s.id === localCls.schoolId);
+                            const globalSch = globalSchools.find(s => s.id === cls.schoolId);
+                            return localCls.name.toLowerCase() === cls.name.toLowerCase() && 
+                                   localSch && globalSch && localSch.name.toLowerCase() === globalSch.name.toLowerCase();
+                          });
+
+                          return (
+                            <div 
+                              key={cls.id}
+                              onClick={() => setSelectedClassIdForStudent(cls.id as any)}
+                              className={`p-3 rounded-xl border flex items-center justify-between gap-4 cursor-pointer transition ${
+                                String(selectedClassIdForStudent) === String(cls.id)
+                                  ? 'bg-amber-500/10 border-amber-500'
+                                  : 'bg-zinc-950/40 border-zinc-850 hover:bg-zinc-900/30'
+                              }`}
+                            >
+                              <div className="min-w-0">
+                                <span className="text-xs font-bold text-zinc-200 block truncate">{cls.name}</span>
+                                <span className="text-[10px] text-zinc-500 flex items-center gap-1 mt-0.5">
+                                  <Users className="w-3 h-3 text-zinc-650" /> {studentCount} alunos cadastrados
+                                </span>
+                              </div>
+
+                              <div className="shrink-0 flex items-center gap-1.5" onClick={e => e.stopPropagation()}>
+                                {isAttached ? (
+                                  <span className="text-[10px] bg-emerald-950/80 text-emerald-400 border border-emerald-800/50 px-2 py-1 rounded-lg font-bold flex items-center gap-1 shrink-0 select-none">
+                                    <Check className="w-3 h-3" /> Vinculada
+                                  </span>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    disabled={attachingClassId === cls.id}
+                                    onClick={() => handleAttachGlobalClass(cls)}
+                                    className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white text-[11px] font-bold rounded-lg transition shrink-0 cursor-pointer"
+                                  >
+                                    {attachingClassId === cls.id ? 'Vinculando...' : 'Vincular'}
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      
+                      {selectedGlobalSchoolId && globalClasses.filter(c => c.schoolId === selectedGlobalSchoolId).length === 0 && (
+                        <p className="text-center py-6 text-zinc-500 text-xs">Nenhuma turma registrada pelo coordenador para esta escola.</p>
+                      )}
+                      {!selectedGlobalSchoolId && (
+                        <p className="text-center py-6 text-zinc-500 text-xs">Selecione uma escola acima para ver as turmas disponíveis.</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* RHS: Students Preview */}
+            <div className="lg:col-span-7">
+              <div className="bg-zinc-900 border border-zinc-800 p-5 rounded-2xl space-y-4">
+                <div className="flex items-center justify-between border-b border-zinc-800 pb-2">
+                  <h4 className="text-white font-bold text-xs uppercase tracking-wider text-zinc-300 flex items-center gap-2">
+                    <Users className="w-4 h-4 text-amber-500" /> Lista Oficial de Alunos ({globalStudents.filter(st => String(st.classId) === String(selectedClassIdForStudent)).length})
+                  </h4>
+                </div>
+
+                <div className="space-y-1.5 max-h-[420px] overflow-y-auto pr-1">
+                  {globalStudents
+                    .filter(st => String(st.classId) === String(selectedClassIdForStudent))
+                    .map((st) => (
+                      <div key={st.id} className="flex items-center gap-3 bg-zinc-950/30 border border-zinc-850 rounded-xl px-3 py-2 text-xs hover:border-zinc-800 transition">
+                        <span className="font-mono text-[10px] font-bold text-amber-500 bg-amber-500/5 border border-amber-500/10 w-5.5 h-5.5 rounded flex items-center justify-center shrink-0">
+                          {st.rollNumber}
+                        </span>
+                        <span className="text-zinc-300 font-medium">{st.name}</span>
+                      </div>
+                    ))}
+                  
+                  {(!selectedClassIdForStudent || globalStudents.filter(st => String(st.classId) === String(selectedClassIdForStudent)).length === 0) && (
+                    <div className="text-center py-16 text-zinc-500">
+                      <Users className="w-12 h-12 mx-auto mb-2 opacity-20" />
+                      <p className="text-xs">Selecione uma turma disponível ao lado para visualizar a lista oficial de alunos.</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
           </div>
 
         </div>
