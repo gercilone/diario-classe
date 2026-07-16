@@ -271,7 +271,7 @@ export default function TabDAttendance({
   }
 
   // Calculate cumulative stats per student
-  const totalLessonsGiven = allLessons.reduce((acc, curr) => acc + (Number(curr.lessonCount) || 0), 0);
+  const totalLessonsGiven = allLessons.reduce((acc, curr) => acc + (Number(curr.lessonCount) || 2), 0);
 
   const getStudentCumulativeAttendance = (studentId: number) => {
     if (totalLessonsGiven === 0) return { absences: 0, pct: 100 };
@@ -620,20 +620,24 @@ export default function TabDAttendance({
               return dateStr;
             };
 
+            const safeTotalLessonsGiven = typeof totalLessonsGiven === 'number' && !isNaN(totalLessonsGiven) ? totalLessonsGiven : 0;
+            const safeTargetBimonthlyLessons = typeof targetBimonthlyLessons === 'number' && !isNaN(targetBimonthlyLessons) && targetBimonthlyLessons > 0 ? targetBimonthlyLessons : 40;
+            const progressPercentage = Math.min(100, Math.max(0, (safeTotalLessonsGiven / safeTargetBimonthlyLessons) * 100));
+
             return (
               <div className="space-y-4">
                 <div className="bg-zinc-950/40 border border-zinc-850 p-4 rounded-xl space-y-2">
                   <div className="text-zinc-400 text-xs font-semibold flex items-center justify-between">
                     <span>Progresso no Bimestre:</span>
                     <span className="font-mono font-bold bg-zinc-900 text-blue-400 px-2.5 py-0.5 rounded-full border border-zinc-800 text-[10px]">
-                      {totalLessonsGiven}/{targetBimonthlyLessons} Aulas (Faltam {Math.max(0, targetBimonthlyLessons - totalLessonsGiven)})
+                      {safeTotalLessonsGiven}/{safeTargetBimonthlyLessons} Aulas (Faltam {Math.max(0, safeTargetBimonthlyLessons - safeTotalLessonsGiven)})
                     </span>
                   </div>
                   {/* Progress bar */}
                   <div className="w-full bg-zinc-950 h-2 rounded-full overflow-hidden border border-zinc-900">
                     <div 
                       className="bg-blue-500 h-full rounded-full transition-all duration-300" 
-                      style={{ width: `${Math.min(100, (totalLessonsGiven / targetBimonthlyLessons) * 100)}%` }}
+                      style={{ width: `${progressPercentage}%` }}
                     ></div>
                   </div>
                   <p className="text-[10px] text-zinc-500 mt-1">
@@ -659,7 +663,7 @@ export default function TabDAttendance({
                           {/* Date box badge */}
                           <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-1.5 text-center min-w-[55px] shrink-0">
                             <span className="block font-black text-xs text-zinc-100">{formatLessonDate(lesson.date)}</span>
-                            <span className="block text-[8px] text-zinc-500 font-mono mt-0.5">{lesson.lessonCount} {lesson.lessonCount === 1 ? 'aula' : 'aulas'}</span>
+                            <span className="block text-[8px] text-zinc-500 font-mono mt-0.5">{lesson.lessonCount || 2} {(lesson.lessonCount || 2) === 1 ? 'aula' : 'aulas'}</span>
                           </div>
 
                           {/* Content */}

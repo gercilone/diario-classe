@@ -200,7 +200,7 @@ export default function TabEReports({ schoolId, classId, subjectId, bimonthly, i
 
   // Attendance summary
   const getStudentAttendanceRow = (studentId: number) => {
-    const totalLessons = lessons.reduce((acc, curr) => acc + (Number(curr.lessonCount) || 0), 0);
+    const totalLessons = lessons.reduce((acc, curr) => acc + (Number(curr.lessonCount) || 2), 0);
     const absences = attendance
       .filter((a) => a.studentId === studentId)
       .reduce((acc, curr) => acc + curr.absences, 0);
@@ -214,7 +214,7 @@ export default function TabEReports({ schoolId, classId, subjectId, bimonthly, i
     const bimNum = Number(bim);
     return allLessonsForSubject
       .filter((l) => Number(l.classId) === cid && Number(l.bimonthly) === bimNum)
-      .reduce((sum, curr) => sum + (curr.lessonCount || 0), 0);
+      .reduce((sum, curr) => sum + (Number(curr.lessonCount) || 2), 0);
   };
 
   // Print Report Handler
