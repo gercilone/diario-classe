@@ -46,10 +46,16 @@ export default function TabFSettings({ teacherName, setTeacherName, onSecuritySa
 
   // WEEKLY SCHEDULE FORM STATES
   const [schedDay, setSchedDay] = useState(1); // 1 = Segunda
-  const [schedTime, setSchedTime] = useState('07:00 - 07:50');
+  const [schedStartTime, setSchedStartTime] = useState('07:00');
+  const [schedEndTime, setSchedEndTime] = useState('09:00');
   const [schedSchool, setSchedSchool] = useState<number | undefined>(undefined);
   const [schedClass, setSchedClass] = useState<number | undefined>(undefined);
   const [schedSubject, setSchedSubject] = useState<number | undefined>(undefined);
+
+  const applyTimeSuggestion = (start: string, end: string) => {
+    setSchedStartTime(start);
+    setSchedEndTime(end);
+  };
 
   // EDITING STATES
   const [editingSchoolId, setEditingSchoolId] = useState<number | undefined>(undefined);
@@ -687,11 +693,19 @@ export default function TabFSettings({ teacherName, setTeacherName, onSecuritySa
   // ACTIONS: Horário Semanal
   const handleAddSchedule = async (e: FormEvent) => {
     e.preventDefault();
-    if (!schedSchool || !schedClass || !schedSubject) return;
+    if (!schedSchool || !schedClass || !schedSubject) {
+      setAlertDialog({
+        isOpen: true,
+        title: 'Atenção',
+        message: 'Por favor, selecione a Escola, a Turma e a Disciplina.'
+      });
+      return;
+    }
+    const timeSlot = `${schedStartTime} - ${schedEndTime}`;
     try {
       await db.weeklySchedule.add({
         dayOfWeek: schedDay,
-        timeSlot: schedTime,
+        timeSlot: timeSlot,
         schoolId: schedSchool,
         classId: schedClass,
         subjectId: schedSubject
@@ -2335,95 +2349,312 @@ export default function TabFSettings({ teacherName, setTeacherName, onSecuritySa
               <Clock className="w-4 h-4 text-emerald-400" /> Grade Horária Semanal
             </h3>
 
-            <form onSubmit={handleAddSchedule} className="space-y-3 bg-zinc-950/20 p-3 rounded-xl border border-zinc-800">
-              <div className="grid grid-cols-2 gap-2">
-                <div className="space-y-1">
-                  <label className="text-[9px] text-zinc-500 uppercase font-bold">Dia da Semana</label>
-                  <select
-                    id="add-sched-day-select"
-                    required
-                    value={schedDay}
-                    onChange={(e) => setSchedDay(parseInt(e.target.value))}
-                    className="bg-zinc-950 border border-zinc-800 text-zinc-300 text-xs rounded-xl px-2.5 py-2 w-full focus:ring-1 focus:ring-blue-500 focus:outline-none cursor-pointer"
-                  >
-                    <option value={1} className="bg-zinc-950">Segunda-feira</option>
-                    <option value={2} className="bg-zinc-950">Terça-feira</option>
-                    <option value={3} className="bg-zinc-950">Quarta-feira</option>
-                    <option value={4} className="bg-zinc-950">Quinta-feira</option>
-                    <option value={5} className="bg-zinc-950">Sexta-feira</option>
-                    <option value={6} className="bg-zinc-950">Sábado</option>
-                  </select>
-                </div>
+            <form onSubmit={handleAddSchedule} className="space-y-4 bg-zinc-950/20 p-4 rounded-xl border border-zinc-800 text-zinc-300">
+              
+              {/* a) Selecione a Escola */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-zinc-400 block">
+                  a) Selecione a Escola:
+                </label>
+                {schools.length === 0 ? (
+                  <p className="text-xs text-zinc-500 italic">Nenhuma escola cadastrada.</p>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {schools.map((s) => {
+                      const isSelected = schedSchool === s.id;
+                      return (
+                        <button
+                          key={s.id}
+                          type="button"
+                          onClick={() => {
+                            setSchedSchool(s.id);
+                            setSchedClass(undefined);
+                          }}
+                          className={`px-4 py-2 rounded-xl text-xs font-bold transition duration-200 cursor-pointer ${
+                            isSelected
+                              ? 'bg-blue-600 text-white border border-blue-500 shadow-md shadow-blue-500/20'
+                              : 'bg-zinc-950 text-zinc-300 border border-zinc-800 hover:bg-zinc-900'
+                          }`}
+                        >
+                          {s.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
 
-                <div className="space-y-1">
-                  <label className="text-[9px] text-zinc-500 uppercase font-bold">Faixa de Horário</label>
-                  <input
-                    id="add-sched-time-input"
-                    type="text"
-                    required
-                    placeholder="Ex: 07:00 - 07:50"
-                    value={schedTime}
-                    onChange={(e) => setSchedTime(e.target.value)}
-                    className="bg-zinc-950 border border-zinc-800 text-zinc-200 text-xs rounded-xl px-2.5 py-2 w-full focus:ring-1 focus:ring-blue-500 focus:outline-none"
-                  />
+              {/* b) Selecione a Turma */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-zinc-400 block">
+                  b) Selecione a Turma:
+                </label>
+                {!schedSchool ? (
+                  <p className="text-xs text-zinc-500 italic">Selecione uma escola acima para ver as turmas.</p>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {classes
+                      .filter((c) => c.schoolId === schedSchool)
+                      .sort(sortClasses)
+                      .map((c) => {
+                        const isSelected = schedClass === c.id;
+                        return (
+                          <button
+                            key={c.id}
+                            type="button"
+                            onClick={() => setSchedClass(c.id)}
+                            className={`px-4 py-2 rounded-xl text-xs font-bold transition duration-200 cursor-pointer ${
+                              isSelected
+                                ? 'bg-blue-600 text-white border border-blue-500 shadow-md shadow-blue-500/20'
+                                : 'bg-zinc-950 text-zinc-300 border border-zinc-800 hover:bg-zinc-900'
+                            }`}
+                          >
+                            {c.name}
+                          </button>
+                        );
+                      })}
+                    {classes.filter((c) => c.schoolId === schedSchool).length === 0 && (
+                      <p className="text-xs text-zinc-500 italic">Nenhuma turma cadastrada nesta escola.</p>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* c) Selecione a Disciplina */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-zinc-400 block">
+                  c) Selecione a Disciplina:
+                </label>
+                {subjects.length === 0 ? (
+                  <p className="text-xs text-zinc-500 italic">Nenhuma disciplina cadastrada.</p>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {subjects.map((s) => {
+                      const isSelected = schedSubject === s.id;
+                      return (
+                        <button
+                          key={s.id}
+                          type="button"
+                          onClick={() => setSchedSubject(s.id)}
+                          className={`px-4 py-2 rounded-xl text-xs font-bold transition duration-200 cursor-pointer ${
+                            isSelected
+                              ? 'bg-blue-600 text-white border border-blue-500 shadow-md shadow-blue-500/20'
+                              : 'bg-zinc-950 text-zinc-300 border border-zinc-800 hover:bg-zinc-900'
+                          }`}
+                        >
+                          {s.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* d) Dia da Semana */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-zinc-400 block">
+                  d) Dia da Semana:
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    { id: 1, name: 'Segunda' },
+                    { id: 2, name: 'Terça' },
+                    { id: 3, name: 'Quarta' },
+                    { id: 4, name: 'Quinta' },
+                    { id: 5, name: 'Sexta' },
+                    { id: 6, name: 'Sábado' },
+                    { id: 7, name: 'Domingo' }
+                  ].map((day) => {
+                    const isSelected = schedDay === day.id;
+                    return (
+                      <button
+                        key={day.id}
+                        type="button"
+                        onClick={() => setSchedDay(day.id)}
+                        className={`px-4 py-2 rounded-xl text-xs font-bold transition duration-200 cursor-pointer ${
+                          isSelected
+                            ? 'bg-blue-600 text-white border border-blue-500 shadow-md shadow-blue-500/20'
+                            : 'bg-zinc-950 text-zinc-300 border border-zinc-800 hover:bg-zinc-900'
+                        }`}
+                      >
+                        {day.name}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
-              <div className="grid grid-cols-3 gap-2">
-                <div>
-                  <select
-                    id="add-sched-school-select"
-                    required
-                    value={schedSchool || ''}
-                    onChange={(e) => {
-                      setSchedSchool(e.target.value ? parseInt(e.target.value) : undefined);
-                      setSchedClass(undefined);
-                    }}
-                    className="bg-zinc-950 border border-zinc-800 text-zinc-200 text-xs rounded-xl px-2.5 py-2 w-full focus:ring-1 focus:ring-blue-500 focus:outline-none cursor-pointer"
-                  >
-                    <option value="" className="bg-zinc-950">Escola</option>
-                    {schools.map((s) => (
-                      <option key={s.id} value={s.id} className="bg-zinc-950">{s.name}</option>
-                    ))}
-                  </select>
+              {/* e) Horário de Início e Término da Aula */}
+              <div className="space-y-3 pt-2 border-t border-zinc-800/60">
+                <label className="text-xs font-bold text-zinc-400 block">
+                  e) Horário de Início e Término da Aula:
+                </label>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <span className="text-[10px] text-zinc-500 font-bold block uppercase">Hora Início</span>
+                    <input
+                      type="text"
+                      required
+                      placeholder="Ex: 07:00"
+                      value={schedStartTime}
+                      onChange={(e) => setSchedStartTime(e.target.value)}
+                      className="bg-zinc-950 border border-zinc-800 text-zinc-200 text-xs rounded-xl px-3 py-2 w-full focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <span className="text-[10px] text-zinc-500 font-bold block uppercase">Hora Término</span>
+                    <input
+                      type="text"
+                      required
+                      placeholder="Ex: 09:00"
+                      value={schedEndTime}
+                      onChange={(e) => setSchedEndTime(e.target.value)}
+                      className="bg-zinc-950 border border-zinc-800 text-zinc-200 text-xs rounded-xl px-3 py-2 w-full focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                    />
+                  </div>
                 </div>
-                <div>
-                  <select
-                    id="add-sched-class-select"
-                    required
-                    disabled={!schedSchool}
-                    value={schedClass || ''}
-                    onChange={(e) => setSchedClass(e.target.value ? parseInt(e.target.value) : undefined)}
-                    className="bg-zinc-950 border border-zinc-800 text-zinc-200 text-xs rounded-xl px-2.5 py-2 w-full focus:ring-1 focus:ring-blue-500 focus:outline-none disabled:opacity-40 cursor-pointer"
-                  >
-                    <option value="" className="bg-zinc-950">Turma</option>
-                    {classes.filter(c => c.schoolId === schedSchool).sort(sortClasses).map((c) => (
-                      <option key={c.id} value={c.id} className="bg-zinc-950">{c.name}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <select
-                    id="add-sched-subject-select"
-                    required
-                    value={schedSubject || ''}
-                    onChange={(e) => setSchedSubject(e.target.value ? parseInt(e.target.value) : undefined)}
-                    className="bg-zinc-950 border border-zinc-800 text-zinc-200 text-xs rounded-xl px-2.5 py-2 w-full focus:ring-1 focus:ring-blue-500 focus:outline-none cursor-pointer"
-                  >
-                    <option value="" className="bg-zinc-950">Componente</option>
-                    {subjects.map((s) => (
-                      <option key={s.id} value={s.id} className="bg-zinc-950">{s.name}</option>
-                    ))}
-                  </select>
+
+                {/* Sugestões de Horários Rápidos */}
+                <div className="space-y-3 p-3 bg-zinc-950/40 rounded-xl border border-zinc-800/80">
+                  <span className="text-xs font-bold text-blue-400 block">
+                    Sugestões de Horários Rápidos:
+                  </span>
+
+                  {/* Period Manhã */}
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-1 text-[11px] font-bold text-yellow-500">
+                      <span>★</span>
+                      <span>Manhã</span>
+                    </div>
+                    
+                    <div className="space-y-1.5">
+                      <span className="text-[10px] text-zinc-500 font-semibold block">Horários únicos:</span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {[
+                          { start: '07:00', end: '08:00' },
+                          { start: '08:00', end: '09:00' },
+                          { start: '09:15', end: '10:15' },
+                          { start: '10:15', end: '11:15' },
+                          { start: '11:15', end: '12:15' }
+                        ].map((s) => {
+                          const isMatch = schedStartTime === s.start && schedEndTime === s.end;
+                          return (
+                            <button
+                              key={`${s.start}-${s.end}`}
+                              type="button"
+                              onClick={() => applyTimeSuggestion(s.start, s.end)}
+                              className={`px-2.5 py-1.5 rounded-lg text-[10px] font-mono font-bold transition cursor-pointer ${
+                                isMatch
+                                  ? 'bg-blue-600 text-white'
+                                  : 'bg-zinc-900 hover:bg-zinc-850 text-zinc-400 border border-zinc-800'
+                              }`}
+                            >
+                              {s.start} - {s.end}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <span className="text-[10px] text-zinc-500 font-semibold block">Horários duplos:</span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {[
+                          { start: '07:00', end: '09:00' },
+                          { start: '09:15', end: '11:15' }
+                        ].map((s) => {
+                          const isMatch = schedStartTime === s.start && schedEndTime === s.end;
+                          return (
+                            <button
+                              key={`${s.start}-${s.end}`}
+                              type="button"
+                              onClick={() => applyTimeSuggestion(s.start, s.end)}
+                              className={`px-2.5 py-1.5 rounded-lg text-[10px] font-mono font-bold transition cursor-pointer ${
+                                isMatch
+                                  ? 'bg-blue-600 text-white'
+                                  : 'bg-zinc-900 hover:bg-zinc-850 text-zinc-400 border border-zinc-800'
+                              }`}
+                            >
+                              {s.start} - {s.end}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Period Tarde */}
+                  <div className="space-y-2 pt-2 border-t border-zinc-800/40">
+                    <div className="flex items-center gap-1 text-[11px] font-bold text-amber-500">
+                      <span>★</span>
+                      <span>Tarde</span>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <span className="text-[10px] text-zinc-500 font-semibold block">Horários únicos:</span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {[
+                          { start: '13:00', end: '14:00' },
+                          { start: '14:00', end: '15:00' },
+                          { start: '15:15', end: '16:15' },
+                          { start: '16:15', end: '17:15' },
+                          { start: '17:15', end: '18:15' }
+                        ].map((s) => {
+                          const isMatch = schedStartTime === s.start && schedEndTime === s.end;
+                          return (
+                            <button
+                              key={`${s.start}-${s.end}`}
+                              type="button"
+                              onClick={() => applyTimeSuggestion(s.start, s.end)}
+                              className={`px-2.5 py-1.5 rounded-lg text-[10px] font-mono font-bold transition cursor-pointer ${
+                                isMatch
+                                  ? 'bg-blue-600 text-white'
+                                  : 'bg-zinc-900 hover:bg-zinc-850 text-zinc-400 border border-zinc-800'
+                              }`}
+                            >
+                              {s.start} - {s.end}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <span className="text-[10px] text-zinc-500 font-semibold block">Horários duplos:</span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {[
+                          { start: '13:00', end: '15:00' },
+                          { start: '15:15', end: '17:15' }
+                        ].map((s) => {
+                          const isMatch = schedStartTime === s.start && schedEndTime === s.end;
+                          return (
+                            <button
+                              key={`${s.start}-${s.end}`}
+                              type="button"
+                              onClick={() => applyTimeSuggestion(s.start, s.end)}
+                              className={`px-2.5 py-1.5 rounded-lg text-[10px] font-mono font-bold transition cursor-pointer ${
+                                isMatch
+                                  ? 'bg-blue-600 text-white'
+                                  : 'bg-zinc-900 hover:bg-zinc-850 text-zinc-400 border border-zinc-800'
+                              }`}
+                            >
+                              {s.start} - {s.end}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+
                 </div>
               </div>
 
               <button
                 id="submit-sched-btn"
                 type="submit"
-                className="w-full py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer"
+                className="w-full py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-lg shadow-blue-500/10 active:scale-[0.98]"
               >
-                <Plus className="w-4 h-4" /> Adicionar Aula à Grade
+                Salvar Horário na Grade
               </button>
             </form>
 
