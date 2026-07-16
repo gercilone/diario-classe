@@ -1471,66 +1471,66 @@ export default function TabFSettings({ teacherName, setTeacherName, onSecuritySa
     <div id="settings-tab-content" className="space-y-6">
       
       {/* Sub tabs nav */}
-      <div className="flex border-b border-zinc-800 overflow-x-auto scrollbar-none">
+      <div className="flex flex-col sm:flex-row flex-wrap gap-2 pb-4 border-b border-zinc-800">
         <button
           id="subtab-perfil-btn"
           onClick={() => handleSetSubTabAndLoad('perfil')}
-          className={`px-4 py-3 font-medium text-sm border-b-2 transition-colors flex items-center gap-2 cursor-pointer shrink-0 ${
+          className={`px-4 py-2.5 font-bold text-xs sm:text-sm rounded-xl border transition-all flex items-center gap-2.5 cursor-pointer w-full sm:w-auto ${
             activeSubTab === 'perfil'
-              ? 'border-blue-500 text-blue-400 bg-blue-500/5'
-              : 'border-transparent text-zinc-400 hover:text-zinc-300 hover:bg-white/5'
+              ? 'bg-zinc-800 border-zinc-700 text-white shadow shadow-black/20'
+              : 'text-zinc-400 border-zinc-850 hover:text-zinc-300 hover:bg-zinc-900/50 bg-zinc-950/30'
           }`}
         >
-          <User className="w-4 h-4" />
-          Perfil & Segurança
+          <User className="w-4 h-4 text-blue-400 shrink-0" />
+          <span>Perfil & Segurança</span>
         </button>
         <button
           id="subtab-cadastros-btn"
           onClick={() => handleSetSubTabAndLoad('cadastros')}
-          className={`px-4 py-3 font-medium text-sm border-b-2 transition-colors flex items-center gap-2 cursor-pointer shrink-0 ${
+          className={`px-4 py-2.5 font-bold text-xs sm:text-sm rounded-xl border transition-all flex items-center gap-2.5 cursor-pointer w-full sm:w-auto ${
             activeSubTab === 'cadastros'
-              ? 'border-blue-500 text-blue-400 bg-blue-500/5'
-              : 'border-transparent text-zinc-400 hover:text-zinc-300 hover:bg-white/5'
+              ? 'bg-zinc-800 border-zinc-700 text-white shadow shadow-black/20'
+              : 'text-zinc-400 border-zinc-850 hover:text-zinc-300 hover:bg-zinc-900/50 bg-zinc-950/30'
           }`}
         >
-          <Users className="w-4 h-4" />
-          Gerenciamento de Cadastros
+          <Users className="w-4 h-4 text-emerald-400 shrink-0" />
+          <span>Gerenciamento de Cadastros</span>
         </button>
         <button
           id="subtab-grade-btn"
           onClick={() => handleSetSubTabAndLoad('grade')}
-          className={`px-4 py-3 font-medium text-sm border-b-2 transition-colors flex items-center gap-2 cursor-pointer ${
+          className={`px-4 py-2.5 font-bold text-xs sm:text-sm rounded-xl border transition-all flex items-center gap-2.5 cursor-pointer w-full sm:w-auto ${
             activeSubTab === 'grade'
-              ? 'border-blue-500 text-blue-400 bg-blue-500/5'
-              : 'border-transparent text-zinc-400 hover:text-zinc-300 hover:bg-white/5'
+              ? 'bg-zinc-800 border-zinc-700 text-white shadow shadow-black/20'
+              : 'text-zinc-400 border-zinc-850 hover:text-zinc-300 hover:bg-zinc-900/50 bg-zinc-950/30'
           }`}
         >
-          <Calendar className="w-4 h-4" />
-          Grade Semanal & Cargas
+          <Calendar className="w-4 h-4 text-amber-400 shrink-0" />
+          <span>Grade Semanal & Cargas</span>
         </button>
         <button
           id="subtab-backup-btn"
           onClick={() => handleSetSubTabAndLoad('backup')}
-          className={`px-4 py-3 font-medium text-sm border-b-2 transition-colors flex items-center gap-2 cursor-pointer ${
+          className={`px-4 py-2.5 font-bold text-xs sm:text-sm rounded-xl border transition-all flex items-center gap-2.5 cursor-pointer w-full sm:w-auto ${
             activeSubTab === 'backup'
-              ? 'border-blue-500 text-blue-400 bg-blue-500/5'
-              : 'border-transparent text-zinc-400 hover:text-zinc-300 hover:bg-white/5'
+              ? 'bg-zinc-800 border-zinc-700 text-white shadow shadow-black/20'
+              : 'text-zinc-400 border-zinc-850 hover:text-zinc-300 hover:bg-zinc-900/50 bg-zinc-950/30'
           }`}
         >
-          <Database className="w-4 h-4" />
-          Backup & Importação
+          <Database className="w-4 h-4 text-violet-400 shrink-0" />
+          <span>Backup & Importação</span>
         </button>
         <button
           id="subtab-turmas-globais-btn"
           onClick={() => handleSetSubTabAndLoad('turmas-globais')}
-          className={`px-4 py-3 font-medium text-sm border-b-2 transition-colors flex items-center gap-2 cursor-pointer shrink-0 ${
+          className={`px-4 py-2.5 font-bold text-xs sm:text-sm rounded-xl border transition-all flex items-center gap-2.5 cursor-pointer w-full sm:w-auto ${
             activeSubTab === 'turmas-globais'
-              ? 'border-blue-500 text-blue-400 bg-blue-500/5'
-              : 'border-transparent text-zinc-400 hover:text-zinc-300 hover:bg-white/5'
+              ? 'bg-zinc-800 border-zinc-700 text-white shadow shadow-black/20'
+              : 'text-zinc-400 border-zinc-850 hover:text-zinc-300 hover:bg-zinc-900/50 bg-zinc-950/30'
           }`}
         >
-          <SchoolIcon className="w-4 h-4 text-amber-500" />
-          Anexar Turmas Globais
+          <SchoolIcon className="w-4 h-4 text-rose-400 shrink-0" />
+          <span>Anexar Turmas Globais</span>
         </button>
       </div>
 
