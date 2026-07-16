@@ -1812,7 +1812,7 @@ export default function App() {
       />
 
       {/* Main Tabs Navigation Bar */}
-      <nav id="app-main-tabs-nav" className="bg-zinc-900/60 border-b border-zinc-800/60 sticky top-[73px] md:top-[73px] z-40 backdrop-blur-md">
+      <nav id="app-main-tabs-nav" className="bg-zinc-900/60 border-b border-zinc-800/60 sticky top-0 z-40 backdrop-blur-md">
         <div className="max-w-7xl mx-auto px-2 sm:px-4">
           <div className="grid grid-cols-3 md:flex md:flex-row md:flex-wrap md:space-x-2 py-2 gap-1 sm:gap-1.5 md:gap-0">
             {tabsInfo.map((tab) => {

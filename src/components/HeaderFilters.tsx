@@ -94,7 +94,7 @@ export default function HeaderFilters({
   const theme = getSchoolColors(selectedSchoolId);
 
   return (
-    <div id="header-filters-container" className="bg-[#09090b] border-b border-zinc-800 p-4 sticky top-0 z-50 shadow-md">
+    <div id="header-filters-container" className="bg-[#09090b] border-b border-zinc-800 p-4 relative z-30 shadow-md">
       <div className="max-w-7xl mx-auto flex flex-col gap-4">
         
         {/* Top Bar: Logo, Teacher info, Logout */}
