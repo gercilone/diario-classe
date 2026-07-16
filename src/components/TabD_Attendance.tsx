@@ -661,7 +661,7 @@ export default function TabDAttendance({
                     <span>Conteúdos Lançados ({bimonthly}º Bim)</span>
                   </div>
 
-                  <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-zinc-800">
+                  <div className="space-y-2 pr-1">
                     {sortedLessons.length === 0 ? (
                       <div className="bg-zinc-950/20 border border-dashed border-zinc-850 p-6 text-center text-zinc-500 text-xs rounded-xl">
                         Nenhum conteúdo lançado para este bimestre ainda.
