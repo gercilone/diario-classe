@@ -398,7 +398,7 @@ export default function TabDAttendance({
           <div className="flex items-center justify-between border-b border-zinc-800 pb-2">
             <h4 className="text-xs font-bold text-zinc-300 flex items-center gap-1.5 uppercase tracking-wider">
               <CalendarDays className="w-3.5 h-3.5 text-blue-400" />
-              COBRATES / Agenda do Dia
+              Agenda do Dia
             </h4>
             <span className="text-[9px] font-bold text-zinc-500 font-mono">
               Hoje ({getDayLabel(getTodayDayOfWeek()).split('-')[0]})
@@ -410,7 +410,7 @@ export default function TabDAttendance({
               Nenhum horário cadastrado nas configurações.
             </p>
           ) : (
-            <div className="space-y-1.5 max-h-44 overflow-y-auto pr-1">
+            <div className="space-y-1.5 pr-1">
               {weeklySchedules
                 .filter(s => s.dayOfWeek === getTodayDayOfWeek())
                 .map((sched) => {
