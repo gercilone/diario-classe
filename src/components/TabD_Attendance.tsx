@@ -75,9 +75,8 @@ export default function TabDAttendance({
     const targetClassId = Number(classId);
     const targetSubjectId = Number(subjectId);
     const targetBimonthly = Number(bimonthly);
-    return db.lessons
-      .filter(l => Number(l.classId) === targetClassId && Number(l.subjectId) === targetSubjectId && Number(l.bimonthly) === targetBimonthly)
-      .toArray();
+    const list = await db.lessons.where('classId').equals(targetClassId).toArray();
+    return list.filter(l => Number(l.subjectId) === targetSubjectId && Number(l.bimonthly) === targetBimonthly);
   }, [classId, subjectId, bimonthly]) || [];
 
   // Query lesson on selected date
@@ -85,28 +84,26 @@ export default function TabDAttendance({
     if (!classId || !subjectId || !selectedDate) return undefined;
     const targetClassId = Number(classId);
     const targetSubjectId = Number(subjectId);
-    return db.lessons
-      .filter(l => Number(l.classId) === targetClassId && Number(l.subjectId) === targetSubjectId && l.date === selectedDate)
-      .first();
-  }, [classId, subjectId, selectedDate]);
+    const targetBimonthly = Number(bimonthly);
+    const list = await db.lessons.where('classId').equals(targetClassId).toArray();
+    return list.find(l => Number(l.subjectId) === targetSubjectId && l.date === selectedDate && Number(l.bimonthly) === targetBimonthly);
+  }, [classId, subjectId, selectedDate, bimonthly]);
 
   // Query all attendance for this subject and bimonthly to compute cumulative statistics
   const bimonthlyAttendance = useLiveQuery(async () => {
     if (!subjectId) return [];
     const targetSubjectId = Number(subjectId);
     const targetBimonthly = Number(bimonthly);
-    return db.attendance
-      .filter(a => Number(a.subjectId) === targetSubjectId && Number(a.bimonthly) === targetBimonthly)
-      .toArray();
+    const list = await db.attendance.where('subjectId').equals(targetSubjectId).toArray();
+    return list.filter(a => Number(a.bimonthly) === targetBimonthly);
   }, [subjectId, bimonthly]) || [];
 
   // Query attendance records for current selected date
   const dailyAttendance = useLiveQuery(async () => {
     if (!subjectId || !selectedDate) return [];
     const targetSubjectId = Number(subjectId);
-    return db.attendance
-      .filter(a => Number(a.subjectId) === targetSubjectId && a.date === selectedDate)
-      .toArray();
+    const list = await db.attendance.where('date').equals(selectedDate).toArray();
+    return list.filter(a => Number(a.subjectId) === targetSubjectId);
   }, [subjectId, selectedDate]) || [];
 
   // Sync state with current lesson when selected date or loaded lesson changes
@@ -297,12 +294,14 @@ export default function TabDAttendance({
           date: selectedDate,
           lessonCount: Number(lessonCount),
           content: content.trim(),
+          bimonthly: Number(bimonthly),
         });
         setEditingLessonId(undefined);
       } else if (currentLesson) {
         await db.lessons.update(currentLesson.id!, {
           lessonCount: Number(lessonCount),
           content: content.trim(),
+          bimonthly: Number(bimonthly),
         });
       } else {
         await db.lessons.add({
@@ -509,7 +508,10 @@ export default function TabDAttendance({
                   required
                   disabled={isReadOnly}
                   value={selectedDate}
-                  onChange={(e) => setSelectedDate(e.target.value)}
+                  onChange={(e) => {
+                    setSelectedDate(e.target.value);
+                    setIsSaved(false);
+                  }}
                   className="bg-zinc-950 border border-zinc-800 text-zinc-200 text-xs rounded-xl px-3 py-2.5 w-full focus:ring-1 focus:ring-blue-500 focus:outline-none disabled:opacity-60"
                 />
               </div>
@@ -522,7 +524,10 @@ export default function TabDAttendance({
                 id="attendance-lesson-count-select"
                 value={lessonCount}
                 disabled={isReadOnly}
-                onChange={(e) => setLessonCount(parseInt(e.target.value))}
+                onChange={(e) => {
+                  setLessonCount(parseInt(e.target.value));
+                  setIsSaved(false);
+                }}
                 className="bg-zinc-950 border border-zinc-800 text-zinc-200 text-xs rounded-xl px-3 py-2.5 w-full focus:ring-1 focus:ring-blue-500 focus:outline-none cursor-pointer disabled:opacity-60 disabled:pointer-events-none"
               >
                 <option value={1}>1 Aula / Hora de Aula</option>
@@ -542,7 +547,10 @@ export default function TabDAttendance({
                 disabled={isReadOnly}
                 placeholder="Ex: Introdução à citologia, organelas citoplasmáticas e suas funções. Exercícios do livro didático pág 34-36."
                 value={content}
-                onChange={(e) => setContent(e.target.value)}
+                onChange={(e) => {
+                  setContent(e.target.value);
+                  setIsSaved(false);
+                }}
                 className="bg-zinc-950 border border-zinc-800 text-zinc-200 text-xs rounded-xl p-3 w-full focus:ring-1 focus:ring-blue-500 focus:outline-none disabled:opacity-60"
               />
             </div>
