@@ -67,7 +67,7 @@ export default function HeaderFilters({
             </div>
           </div>
 
-          {isAuthEnabled && onLogout && (
+          {onLogout && (
             <button
               id="header-logout-btn"
               onClick={onLogout}
@@ -75,7 +75,7 @@ export default function HeaderFilters({
               title="Sair do aplicativo"
             >
               <LogOut className="w-3.5 h-3.5" />
-              <span>Bloquear</span>
+              <span>Sair</span>
             </button>
           )}
         </div>
@@ -153,7 +153,7 @@ export default function HeaderFilters({
           </div>
         </div>
 
-        {isAuthEnabled && onLogout && (
+        {onLogout && (
           <button
             id="header-logout-btn-desktop"
             onClick={onLogout}
@@ -161,7 +161,7 @@ export default function HeaderFilters({
             title="Sair do aplicativo"
           >
             <LogOut className="w-4 h-4" />
-            <span>Bloquear</span>
+            <span>Sair</span>
           </button>
         )}
       </div>

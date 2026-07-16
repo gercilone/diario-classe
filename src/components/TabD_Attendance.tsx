@@ -388,13 +388,10 @@ export default function TabDAttendance({
   };
 
   return (
-    <div id="attendance-tab-content" className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+    <div id="attendance-tab-content" className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
       
-      {/* LEFT COLUMN: Agenda first, Form second, Stats & Contents third (5 cols) */}
-      <div className="lg:col-span-5 space-y-4">
-        
-        {/* 1. Weekly Schedule Shortcuts card / Agenda do Dia */}
-        <div className="bg-zinc-900 border border-zinc-800 p-4 rounded-2xl space-y-3 shadow-md">
+      {/* 1. Weekly Schedule Shortcuts card / Agenda do Dia */}
+      <div className="col-span-12 lg:col-span-5 order-1 lg:order-1 bg-zinc-900 border border-zinc-800 p-4 rounded-2xl space-y-3 shadow-md">
           <div className="flex items-center justify-between border-b border-zinc-800 pb-2">
             <h4 className="text-xs font-bold text-zinc-300 flex items-center gap-1.5 uppercase tracking-wider">
               <CalendarDays className="w-3.5 h-3.5 text-blue-400" />
@@ -493,11 +490,117 @@ export default function TabDAttendance({
           )}
         </div>
 
-        {/* 2. Lesson Registration Form */}
+        {/* 2. Chamada Inteligente */}
+        <div className="col-span-12 lg:col-span-7 lg:row-span-3 order-2 lg:order-2 bg-zinc-900 border border-zinc-800 p-5 rounded-2xl space-y-4 shadow-xl h-fit">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-zinc-800 pb-3 gap-2">
+            <div>
+              <h3 className="text-white font-bold text-base flex items-center gap-2">
+                <CheckCircle2 className="w-5 h-5 text-emerald-400" /> Chamada Inteligente
+              </h3>
+              <p className="text-xs text-zinc-400 mt-0.5">
+                Atribua faltas clicando no número correspondente para a aula de hoje
+              </p>
+            </div>
+
+            <div className="text-xs text-zinc-500 bg-zinc-950 px-2.5 py-1.5 rounded-lg font-mono">
+              Data: {selectedDate.split('-').reverse().join('/')}
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table id="attendance-students-table" className="w-full text-left border-collapse">
+              <thead>
+                <tr className="border-b border-zinc-800 text-zinc-400 text-[11px] uppercase font-bold tracking-wider select-none">
+                  <th className="py-2 px-2 w-10 text-center">Nº</th>
+                  <th className="py-2 px-3">Nome do Aluno</th>
+                  <th className="py-2 px-2 text-center w-28 bg-zinc-950/30">Lançar Falta</th>
+                  <th className="py-2 px-3 text-right w-28">Presença Geral</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-800/60 text-xs">
+                {students.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} className="py-8 text-center text-zinc-500">
+                      Nenhum aluno cadastrado nesta turma.
+                    </td>
+                  </tr>
+                ) : (
+                  students.map((student) => {
+                    const dailyAbsences = getAbsencesForStudent(student.id!);
+                    const stats = getStudentCumulativeAttendance(student.id!);
+                    
+                    const isBelowAttendanceRequirement = stats.pct < 75;
+
+                    return (
+                      <tr key={student.id} className="hover:bg-white/5 transition-colors group">
+                        <td className="py-3 px-2 text-center text-zinc-500 font-mono">{student.rollNumber}</td>
+                        <td className="py-3 px-3 font-medium text-zinc-200">
+                          {student.name}
+                        </td>
+                        
+                        {/* Attendance Buttons Selection */}
+                        <td className="py-1.5 px-1 text-center bg-zinc-950/20">
+                          <div className="inline-flex rounded-lg bg-zinc-950 p-1 border border-zinc-800">
+                            {Array.from({ length: lessonCount + 1 }).map((_, absIdx) => {
+                              const isActive = dailyAbsences === absIdx;
+                              let btnStyle = 'text-zinc-500 hover:text-zinc-300';
+                              
+                              if (isActive) {
+                                btnStyle = absIdx === 0 
+                                  ? 'bg-emerald-600 text-white font-extrabold shadow-sm shadow-emerald-600/10' 
+                                  : 'bg-rose-600 text-white font-extrabold shadow-sm shadow-rose-600/10';
+                              }
+
+                              return (
+                                <button
+                                  id={`set-absences-btn-${student.id}-${absIdx}`}
+                                  key={absIdx}
+                                  type="button"
+                                  disabled={isReadOnly}
+                                  onClick={() => !isReadOnly && handleSetAbsences(student.id!, absIdx)}
+                                  className={`px-2 py-1 rounded text-[10px] font-mono cursor-pointer transition disabled:pointer-events-none ${btnStyle}`}
+                                  title={`${absIdx === 0 ? 'Presença Completa' : `${absIdx} Falta(s)`}`}
+                                >
+                                  {absIdx === 0 ? 'P' : `${absIdx}F`}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </td>
+
+                        {/* Presença Acumulada % */}
+                        <td className="py-3 px-3 text-right">
+                          <div className="flex items-center justify-end gap-1.5">
+                            <div className="text-right">
+                              <span className={`font-mono font-bold text-xs ${
+                                isBelowAttendanceRequirement ? 'text-rose-400 font-extrabold' : 'text-zinc-300'
+                              }`}>
+                                {stats.pct}%
+                              </span>
+                              <span className="block text-[9px] text-zinc-500">
+                                {stats.absences} faltas
+                              </span>
+                            </div>
+                            
+                            {isBelowAttendanceRequirement && (
+                              <ShieldAlert className="w-3.5 h-3.5 text-rose-400 shrink-0 animate-pulse" title="Risco de reprovação por falta (< 75%)" />
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* 3. Lesson Registration Form */}
         <form
           id="lesson-log-form"
           onSubmit={handleSaveLesson}
-          className="bg-zinc-900 border border-zinc-800 p-5 rounded-2xl space-y-4 shadow-xl"
+          className="col-span-12 lg:col-span-5 order-3 lg:order-3 bg-zinc-900 border border-zinc-800 p-5 rounded-2xl space-y-4 shadow-xl"
         >
           <div className="flex items-center gap-2 border-b border-zinc-800 pb-3">
             <BookOpen className="w-5 h-5 text-blue-400" />
@@ -609,8 +712,8 @@ export default function TabDAttendance({
           </div>
         </form>
 
-        {/* 3. Statistics & Launched Contents Report (Last) */}
-        <div className="bg-zinc-900 border border-zinc-800 p-5 rounded-2xl space-y-4 shadow-xl">
+        {/* 4. Statistics & Launched Contents Report (Last) */}
+        <div className="col-span-12 lg:col-span-5 order-4 lg:order-4 bg-zinc-900 border border-zinc-800 p-5 rounded-2xl space-y-4 shadow-xl">
           <div className="flex items-center gap-2 border-b border-zinc-800 pb-3">
             <Info className="w-4 h-4 text-blue-400" />
             <h3 className="text-white font-bold text-sm uppercase tracking-wider">Estatísticas do Bimestre</h3>
@@ -712,118 +815,6 @@ export default function TabDAttendance({
             );
           })()}
         </div>
-
-      </div>
-
-      {/* RIGHT COLUMN: Smart Roll Call Checklist (7 cols) */}
-      <div className="lg:col-span-7 space-y-4">
-        
-        <div className="bg-zinc-900 border border-zinc-800 p-5 rounded-2xl space-y-4 shadow-xl">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-zinc-800 pb-3 gap-2">
-            <div>
-              <h3 className="text-white font-bold text-base flex items-center gap-2">
-                <CheckCircle2 className="w-5 h-5 text-emerald-400" /> Chamada Inteligente
-              </h3>
-              <p className="text-xs text-zinc-400 mt-0.5">
-                Atribua faltas clicando no número correspondente para a aula de hoje
-              </p>
-            </div>
-
-            <div className="text-xs text-zinc-500 bg-zinc-950 px-2.5 py-1.5 rounded-lg font-mono">
-              Data: {selectedDate.split('-').reverse().join('/')}
-            </div>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table id="attendance-students-table" className="w-full text-left border-collapse">
-              <thead>
-                <tr className="border-b border-zinc-800 text-zinc-400 text-[11px] uppercase font-bold tracking-wider select-none">
-                  <th className="py-2 px-2 w-10 text-center">Nº</th>
-                  <th className="py-2 px-3">Nome do Aluno</th>
-                  <th className="py-2 px-2 text-center w-28 bg-zinc-950/30">Lançar Falta</th>
-                  <th className="py-2 px-3 text-right w-28">Presença Geral</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-zinc-800/60 text-xs">
-                {students.length === 0 ? (
-                  <tr>
-                    <td colSpan={4} className="py-8 text-center text-zinc-500">
-                      Nenhum aluno cadastrado nesta turma.
-                    </td>
-                  </tr>
-                ) : (
-                  students.map((student) => {
-                    const dailyAbsences = getAbsencesForStudent(student.id!);
-                    const stats = getStudentCumulativeAttendance(student.id!);
-                    
-                    const isBelowAttendanceRequirement = stats.pct < 75;
-
-                    return (
-                      <tr key={student.id} className="hover:bg-white/5 transition-colors group">
-                        <td className="py-3 px-2 text-center text-zinc-500 font-mono">{student.rollNumber}</td>
-                        <td className="py-3 px-3 font-medium text-zinc-200">
-                          {student.name}
-                        </td>
-                        
-                        {/* Attendance Buttons Selection */}
-                        <td className="py-1.5 px-1 text-center bg-zinc-950/20">
-                          <div className="inline-flex rounded-lg bg-zinc-950 p-1 border border-zinc-800">
-                            {Array.from({ length: lessonCount + 1 }).map((_, absIdx) => {
-                              const isActive = dailyAbsences === absIdx;
-                              let btnStyle = 'text-zinc-500 hover:text-zinc-300';
-                              
-                              if (isActive) {
-                                btnStyle = absIdx === 0 
-                                  ? 'bg-emerald-600 text-white font-extrabold shadow-sm shadow-emerald-600/10' 
-                                  : 'bg-rose-600 text-white font-extrabold shadow-sm shadow-rose-600/10';
-                              }
-
-                              return (
-                                <button
-                                  id={`set-absences-btn-${student.id}-${absIdx}`}
-                                  key={absIdx}
-                                  type="button"
-                                  disabled={isReadOnly}
-                                  onClick={() => !isReadOnly && handleSetAbsences(student.id!, absIdx)}
-                                  className={`px-2 py-1 rounded text-[10px] font-mono cursor-pointer transition disabled:pointer-events-none ${btnStyle}`}
-                                  title={`${absIdx === 0 ? 'Presença Completa' : `${absIdx} Falta(s)`}`}
-                                >
-                                  {absIdx === 0 ? 'P' : `${absIdx}F`}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </td>
-
-                        {/* Presença Acumulada % */}
-                        <td className="py-3 px-3 text-right">
-                          <div className="flex items-center justify-end gap-1.5">
-                            <div className="text-right">
-                              <span className={`font-mono font-bold text-xs ${
-                                isBelowAttendanceRequirement ? 'text-rose-400 font-extrabold' : 'text-zinc-300'
-                              }`}>
-                                {stats.pct}%
-                              </span>
-                              <span className="block text-[9px] text-zinc-500">
-                                {stats.absences} faltas
-                              </span>
-                            </div>
-                            
-                            {isBelowAttendanceRequirement && (
-                              <ShieldAlert className="w-3.5 h-3.5 text-rose-400 shrink-0 animate-pulse" title="Risco de reprovação por falta (< 75%)" />
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-      </div>
 
     </div>
   );
