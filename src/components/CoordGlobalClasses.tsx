@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef } from 'react';
-import * as pdfjsLib from 'pdfjs-dist';
 import {
   GlobalSchool,
   GlobalClass,
@@ -29,10 +28,6 @@ import {
   FileText,
   Upload
 } from 'lucide-react';
-
-// Configure PDF.js CDN worker
-const pdfjsVersion = pdfjsLib.version || '4.0.370';
-pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsVersion}/build/pdf.worker.min.mjs`;
 
 export default function CoordGlobalClasses() {
   // Lists from cloud
@@ -365,17 +360,38 @@ export default function CoordGlobalClasses() {
 
   // --- SMART SIMADE PARSER METHODS ---
 
+  const loadPdfJS = (): Promise<any> => {
+    return new Promise((resolve, reject) => {
+      if ((window as any).pdfjsLib) {
+        resolve((window as any).pdfjsLib);
+        return;
+      }
+      const script = document.createElement('script');
+      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+      script.async = true;
+      script.onload = () => {
+        const pdfjs = (window as any).pdfjsLib;
+        if (pdfjs) {
+          pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+          resolve(pdfjs);
+        } else {
+          reject(new Error('Failed to load pdfjsLib from CDN'));
+        }
+      };
+      script.onerror = () => reject(new Error('Failed to load PDF.js script'));
+      document.head.appendChild(script);
+    });
+  };
+
   const handlePdfUpload = async (file: File) => {
     setParsingSimade(true);
     try {
+      const pdfjs = await loadPdfJS();
       const reader = new FileReader();
       reader.onload = async (event) => {
         try {
           const typedarray = new Uint8Array(event.target?.result as ArrayBuffer);
-          const pdfjsVersion = pdfjsLib.version || '4.0.370';
-          pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsVersion}/build/pdf.worker.min.mjs`;
-
-          const loadingTask = pdfjsLib.getDocument({ data: typedarray });
+          const loadingTask = pdfjs.getDocument({ data: typedarray });
           const pdf = await loadingTask.promise;
           let extractedText = '';
 
@@ -392,7 +408,7 @@ export default function CoordGlobalClasses() {
           showMsg('PDF do Simade lido com sucesso! Verifique e confirme a prévia abaixo.', 'success');
         } catch (err: any) {
           console.error('Error parsing PDF content:', err);
-          showMsg('Erro ao ler PDF automaticamente. Mas você pode colar o texto do PDF na aba ao lado!', 'error');
+          showMsg('Erro ao extrair texto do PDF. Mas você pode colar o texto do PDF na aba ao lado!', 'error');
         } finally {
           setParsingSimade(false);
         }
@@ -402,9 +418,9 @@ export default function CoordGlobalClasses() {
         setParsingSimade(false);
       };
       reader.readAsArrayBuffer(file);
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      showMsg('Erro ao abrir o arquivo PDF.', 'error');
+      showMsg('Erro ao carregar o leitor de PDF: ' + (err.message || err), 'error');
       setParsingSimade(false);
     }
   };
@@ -416,24 +432,53 @@ export default function CoordGlobalClasses() {
     let className = '';
     const studentsList: { name: string; rollNumber: number }[] = [];
 
-    // Detect School Name: search for indicators
-    for (let i = 0; i < Math.min(15, lines.length); i++) {
-      const line = lines[i];
+    // 1. Detect School Name (Escola)
+    for (const line of lines) {
       const lower = line.toLowerCase();
+      
+      // Look for explicit "Escola:" or "Escola Estadual:"
+      if (lower.includes('escola:') || lower.includes('colégio:') || lower.includes('colegio:') || lower.includes('escola estadual:')) {
+        const parts = line.split(':');
+        if (parts[1] && parts[1].trim().length > 4) {
+          schoolName = parts[1].trim();
+          break;
+        }
+      }
+      
+      // Look for lines containing "Escola Estadual" or "E.E. " or "EE "
       if (
-        lower.includes('esc ') || 
-        lower.includes('escola') || 
-        lower.includes('colégio') || 
-        lower.includes('colegio') || 
-        lower.includes('centro de ed') || 
-        lower.includes('instituto') ||
-        lower.startsWith('esc ')
+        lower.startsWith('escola estadual') || 
+        lower.startsWith('e.e. ') || 
+        lower.startsWith('ee ') ||
+        lower.includes('esc. est.')
       ) {
         schoolName = line;
         break;
       }
     }
-    // Fallback
+    
+    // Fallback search in the top 15 lines if still empty
+    if (!schoolName) {
+      for (let i = 0; i < Math.min(15, lines.length); i++) {
+        const line = lines[i];
+        const lower = line.toLowerCase();
+        if (
+          lower.includes('esc ') || 
+          lower.includes('escola') || 
+          lower.includes('colégio') || 
+          lower.includes('colegio') || 
+          lower.includes('centro de ed') || 
+          lower.includes('instituto') ||
+          lower.startsWith('esc ') ||
+          lower.startsWith('e.e. ') ||
+          lower.startsWith('ee ')
+        ) {
+          schoolName = line;
+          break;
+        }
+      }
+    }
+    // Deep fallback
     if (!schoolName && lines.length > 1) {
       if (lines[0].toLowerCase().includes('estado do')) {
         schoolName = lines[1];
@@ -442,40 +487,84 @@ export default function CoordGlobalClasses() {
       }
     }
 
-    // Detect Class/Turma name
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
+    // 2. Detect Class/Turma/Série/Ano
+    // Look for explicit keys
+    for (const line of lines) {
       const lower = line.toLowerCase();
-      if (lower === 'turma' && i + 1 < lines.length) {
-        className = lines[i + 1];
-        break;
-      } else if (lower.startsWith('turma:')) {
-        className = line.substring(6).trim();
-        break;
-      } else if (lower.startsWith('turma ')) {
-        className = line.substring(6).trim();
-        break;
+      if (
+        lower.includes('série/ano:') || 
+        lower.includes('série:') || 
+        lower.includes('turma:') || 
+        lower.includes('ano:') ||
+        lower.includes('série/ano :') || 
+        lower.includes('série :') || 
+        lower.includes('turma :') || 
+        lower.includes('ano :')
+      ) {
+        const parts = line.split(':');
+        if (parts[1] && parts[1].trim().length >= 2) {
+          className = parts[1].trim();
+          break;
+        }
       }
     }
 
-    // Detect Students
-    const studentRegex = /^\s*(\d+)\s+([A-ZÀ-ÿ\s'.\-–—]{3,60})$/;
-    const excludeWords = ['página', 'pagina', 'rua', 'avenida', 'telefone', 'email', 'escola', 'estado', 'secretaria', 'educação', 'ensino', 'período', 'periodo', 'série', 'serie', 'turno', 'turma', 'alunos', 'nome', 'aluno', 'tipo', 'ensino', 'letivo'];
+    // Fallback if not found with colon
+    if (!className) {
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        const lower = line.toLowerCase();
+        if (lower === 'turma' && i + 1 < lines.length) {
+          className = lines[i + 1];
+          break;
+        } else if (lower.startsWith('turma ')) {
+          className = line.substring(6).trim();
+          break;
+        } else if (lower.startsWith('série ') || lower.startsWith('serie ')) {
+          className = line.substring(6).trim();
+          break;
+        }
+      }
+    }
+
+    // 3. Detect Students, their roll number, and names
+    const excludeWords = [
+      'página', 'pagina', 'rua', 'avenida', 'telefone', 'email', 'escola', 'estado', 
+      'secretaria', 'educação', 'ensino', 'período', 'periodo', 'série', 'serie', 
+      'turno', 'turma', 'alunos', 'nome', 'aluno', 'tipo', 'ensino', 'letivo', 
+      'componente', 'curricular', 'professor', 'diário', 'diario'
+    ];
 
     for (const line of lines) {
-      const match = line.match(studentRegex);
-      if (match) {
-        const roll = parseInt(match[1], 10);
-        const name = match[2].trim();
-        const nameLower = name.toLowerCase();
+      // Regex that matches:
+      // - Start of line, optional spaces
+      // - A roll number (1 to 60)
+      // - Optional separator like dash, dot, space, or dash/hyphen variants
+      // - A capitalized name starting with at least 2 letters, followed by more words of at least 1 letter
+      const studentMatch = line.match(/^\s*(\d+)\s*[\-.\s–—]+\s*([A-ZÀ-Ÿa-zà-ÿ'\.\-–—\s]+)/);
+      if (studentMatch) {
+        const roll = parseInt(studentMatch[1], 10);
+        let fullName = studentMatch[2].trim();
         
-        const isExcluded = excludeWords.some(w => nameLower === w || nameLower.includes(w)) || 
-                           name.includes('/') || 
-                           name.includes('@') ||
-                           roll > 100;
+        if (roll > 0 && roll <= 60 && fullName.length >= 5) {
+          // Clean up trailing status and gender from name
+          fullName = fullName.replace(/\s+[MFmf]\s*$/, '').trim();
+          fullName = fullName.replace(/\s+(?:ativo|ativa|frequente|não frequente|nao frequente|matriculado|transferido|evadido|cancelado)\b/i, '').trim();
+          fullName = fullName.replace(/\s+/g, ' ');
 
-        if (!isExcluded) {
-          studentsList.push({ name, rollNumber: roll });
+          const nameLower = fullName.toLowerCase();
+          const isExcluded = excludeWords.some(w => nameLower === w || nameLower.includes(w)) || 
+                             fullName.includes('/') || 
+                             fullName.includes('@') ||
+                             fullName.includes('.') ||
+                             fullName.length < 5;
+
+          if (!isExcluded) {
+            // Avoid duplicate roll numbers
+            if (!studentsList.some(s => s.rollNumber === roll)) {
+              studentsList.push({ name: fullName, rollNumber: roll });
+            }
+          }
         }
       }
     }
